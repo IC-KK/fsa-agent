@@ -1,0 +1,18 @@
+{
+  "source": "Frozen subset modeled on IRS Publication 502 (Medical and Dental Expenses) and common FSA-eligible categories. Demo use only — not tax or benefits advice.",
+  "eligible": [
+    { "category": "dental", "examples": ["cleanings", "fillings", "crowns", "extractions", "orthodontics"] },
+    { "category": "vision", "examples": ["eye exams", "prescription glasses", "contact lenses", "contact solution"] },
+    { "category": "prescriptions", "examples": ["prescription medications", "insulin"] },
+    { "category": "otc-medical", "examples": ["OTC pain relievers", "allergy medicine", "first aid supplies", "menstrual care products"] },
+    { "category": "lab-diagnostics", "examples": ["blood work", "lab tests", "diagnostic imaging", "COVID/flu tests"] },
+    { "category": "copays-deductibles", "examples": ["doctor visit copays", "specialist copays", "coinsurance"] },
+    { "category": "medical-equipment", "examples": ["crutches", "blood pressure monitors", "thermometers", "sunscreen SPF 15+"] },
+    { "category": "therapy-mental-health", "examples": ["therapy sessions for medical care", "psychiatric care"] }
+  ],
+  "ineligible": [
+    { "category": "gym-fitness", "reason": "General health/fitness memberships are not eligible without a Letter of Medical Necessity", "examples": ["gym memberships", "fitness classes", "supplements"] },
+    { "category": "cosmetic", "reason": "Cosmetic procedures are excluded under IRS rules", "examples": ["teeth whitening", "cosmetic surgery"] },
+    { "category": "general-wellness", "examples": ["vitamins without prescription", "toiletries", "groceries"], "reason": "General wellness items are not qualified medical expenses" }
+  ]
+}

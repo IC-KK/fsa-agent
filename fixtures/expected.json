@@ -1,0 +1,75 @@
+{
+  "_note": "Answer key for tests and demo fallback ONLY. The agent must never read this file at runtime — it reads the receipt files themselves.",
+  "01_bright_smile_dental_jun12.pdf": {
+    "status": "eligible",
+    "claimable": 180.0,
+    "patient": "Jordan Sample",
+    "provider": "Bright Smile Dental Group",
+    "dateOfService": "2026-06-12",
+    "description": "Composite filling and oral evaluation (dental)",
+    "reason": "Dental treatment is an eligible expense; date is inside the 2026 plan year; paid out of pocket."
+  },
+  "02_maple_pharmacy_mixed_cart.png": {
+    "status": "mixed",
+    "claimable": 34.5,
+    "patient": "Jordan Sample",
+    "provider": "Maple Pharmacy #218",
+    "dateOfService": "2026-08-03",
+    "description": "Prescription cetirizine ($24.00) + sunscreen SPF50 ($10.50) eligible; chocolate ($11.25) excluded",
+    "reason": "Line-item split: prescription and SPF 15+ sunscreen are eligible; candy is not a qualified medical expense."
+  },
+  "03_meridian_labs_eob.pdf": {
+    "status": "eligible",
+    "claimable": 65.0,
+    "patient": "Jordan Sample",
+    "provider": "Meridian Diagnostics Laboratory",
+    "dateOfService": "2026-07-09",
+    "description": "Lab panels — patient responsibility after insurance",
+    "reason": "Only the $65.00 patient responsibility is claimable, not the $410.00 billed amount. A bill is not a claim."
+  },
+  "04_cedarwell_massage_no_lmn.pdf": {
+    "status": "needs_lmn",
+    "claimable": 0.0,
+    "patient": "Jordan Sample",
+    "provider": "Cedarwell Massage & Bodywork",
+    "dateOfService": "2026-08-21",
+    "description": "Therapeutic massage, 60 minutes, $85.00",
+    "reason": "Massage is eligible only with a Letter of Medical Necessity from a physician. Parked — no auto-submit."
+  },
+  "05_shopfast_otc_jan.png": {
+    "status": "eligible",
+    "claimable": 18.75,
+    "patient": "Jordan Sample",
+    "provider": "ShopFast (online order)",
+    "dateOfService": "2026-01-14",
+    "description": "Bandages ($10.80) and antiseptic wound wash ($7.95) — OTC first aid",
+    "reason": "OTC first-aid supplies are eligible; items total is claimable (shipping/tax handling noted in audit)."
+  },
+  "06_clearview_prior_year_vision.pdf": {
+    "status": "rejected_prior_year",
+    "claimable": 0.0,
+    "patient": "Jordan Sample",
+    "provider": "ClearView Optical Studio",
+    "dateOfService": "2025-11-08",
+    "description": "Eye exam and prescription lenses, $145.00",
+    "reason": "Perfect receipt, wrong clock: date of service 2025-11-08 is before the 2026 plan year began. Not claimable."
+  },
+  "07_dental_scan_copy.pdf": {
+    "status": "duplicate",
+    "claimable": 0.0,
+    "patient": "Jordan Sample",
+    "provider": "Bright Smile Dental Group",
+    "dateOfService": "2026-06-12",
+    "description": "Same invoice BSD-20447 as 01_bright_smile_dental_jun12.pdf under a different filename",
+    "reason": "Duplicate of an already-processed receipt (same provider, date, invoice number, amount). Blocked to prevent double-claiming."
+  },
+  "08_blurry_grocery.jpg": {
+    "status": "needs_review",
+    "claimable": 0.0,
+    "patient": null,
+    "provider": null,
+    "dateOfService": null,
+    "description": "Image too blurry to extract required fields",
+    "reason": "Cannot reliably read the five substantiation fields. The agent must flag for human review, never guess."
+  }
+}
