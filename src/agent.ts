@@ -1,6 +1,6 @@
-import { Agent, BedrockModel, BeforeToolCallEvent, BeforeModelCallEvent } from "@strands-agents/sdk";
+import { Agent, BeforeToolCallEvent, BeforeModelCallEvent } from "@strands-agents/sdk";
 import { ALL_TOOLS } from "./tools.ts";
-import { MODEL_ID } from "./extractor.ts";
+import { createModel } from "./model.ts";
 import { audit } from "./lib/audit.ts";
 
 const ALLOWED_TOOLS = new Set(ALL_TOOLS.map((t) => t.name));
@@ -31,7 +31,7 @@ Keep your own words to short status lines; the card is the product.`;
 
 export function createAgent(): Agent {
   const agent = new Agent({
-    model: new BedrockModel({ modelId: MODEL_ID, maxTokens: 3000, temperature: 0 }),
+    model: createModel(3000),
     systemPrompt: SYSTEM_PROMPT,
     tools: ALL_TOOLS,
     printer: true,

@@ -1,9 +1,8 @@
 import { readFileSync } from "node:fs";
 import { basename, extname } from "node:path";
-import { Agent, BedrockModel, ImageBlock, DocumentBlock, Message, TextBlock } from "@strands-agents/sdk";
+import { Agent, ImageBlock, DocumentBlock, Message, TextBlock } from "@strands-agents/sdk";
 import { ExtractionSchema, CATEGORIES, type Extraction } from "./lib/schemas.ts";
-
-export const MODEL_ID = process.env.MODEL_ID ?? "global.anthropic.claude-sonnet-4-5-20250929-v1:0";
+import { createModel } from "./model.ts";
 
 const EXTRACTOR_PROMPT = `You read one receipt, invoice, EOB, or order document and return ONLY a JSON object.
 
@@ -53,7 +52,7 @@ export async function extractDocument(path: string): Promise<Extraction> {
     };
   }
   const reader = new Agent({
-    model: new BedrockModel({ modelId: MODEL_ID, maxTokens: 1500, temperature: 0 }),
+    model: createModel(1500),
     systemPrompt: EXTRACTOR_PROMPT,
     printer: false,
   });
