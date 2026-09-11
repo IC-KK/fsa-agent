@@ -5,7 +5,8 @@ aggregate (EBRI). Not because the money isn't theirs, but because nobody tracks 
 the balance, and the shoebox of receipts at the same time.
 
 ClaimSniff is a **silent-loop agent** built with the [Strands Agents SDK](https://strandsagents.com)
-on Amazon Bedrock (Claude Sonnet 4.5). It watches a folder of receipts, works out what's
+running Claude Sonnet 4.5 (Amazon Bedrock or the Anthropic API — one env var switches
+providers). It watches a folder of receipts, works out what's
 claimable under real eligibility rules, assembles reimbursement packets — and only speaks to
 the human once, when there's a decision worth making:
 

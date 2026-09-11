@@ -1,3 +1,8 @@
 node_modules/
 .env
 claims-outbox/
+data/audit.jsonl
+data/claims-index.json
+data/processed-files.json
+receipts-inbox/*
+!receipts-inbox/.gitkeep

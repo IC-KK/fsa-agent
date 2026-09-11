@@ -32,8 +32,9 @@
   data/audit.jsonl  (append-only decision diary for every tool call)
 ```
 
-**AWS pieces:** Amazon Bedrock (Claude Sonnet 4.5, global inference profile) via the Strands
-Agents SDK. Everything else is local files by design — the agent is a claim **packer**, not a
+**Model:** Claude Sonnet 4.5 via the Strands Agents SDK — Amazon Bedrock (global inference
+profile) or the Anthropic API; `src/model.ts` picks by env var, so the provider is a one-line
+switch. Everything else is local files by design — the agent is a claim **packer**, not a
 payer; there is no administrator API to call.
 
 **Trust split:** the model reads documents and writes sentences; deterministic code owns
