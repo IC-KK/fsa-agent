@@ -1,0 +1,3 @@
+{"ts":"2026-09-11T04:02:59.684Z","event":"classify_eligibility","file":"02.png","status":"mixed","claimableCents":3450}
+{"ts":"2026-09-11T04:02:59.692Z","event":"match_account","file":"06.pdf","fileable":false,"reason":"outside_plan_year","dateOfService":"2025-11-08"}
+{"ts":"2026-09-11T04:02:59.693Z","event":"classify_eligibility","file":"08.jpg","status":"needs_review","reason":"low confidence"}

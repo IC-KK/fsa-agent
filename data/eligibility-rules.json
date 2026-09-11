@@ -1,0 +1,17 @@
+{
+  "_note": "Category -> ruling map. Deterministic code applies these; the model only categorizes items. Modeled on IRS Publication 502. Demo use only, not tax advice.",
+  "dental": { "ruling": "eligible", "reason": "Dental treatment is a qualified medical expense." },
+  "vision": { "ruling": "eligible", "reason": "Vision care and corrective lenses are qualified medical expenses." },
+  "prescriptions": { "ruling": "eligible", "reason": "Prescription medications are qualified medical expenses." },
+  "otc-medical": { "ruling": "eligible", "reason": "OTC medicines and first-aid supplies are eligible (post-CARES Act)." },
+  "lab-diagnostics": { "ruling": "eligible", "reason": "Lab tests and diagnostics are qualified medical expenses." },
+  "copays-deductibles": { "ruling": "eligible", "reason": "Patient copays, coinsurance and deductibles are eligible." },
+  "medical-equipment": { "ruling": "eligible", "reason": "Medical equipment and supplies (incl. SPF 15+ sunscreen) are eligible." },
+  "therapy-mental-health": { "ruling": "eligible", "reason": "Medical mental-health care is a qualified expense." },
+  "massage-bodywork": { "ruling": "needs_lmn", "reason": "Massage therapy requires a Letter of Medical Necessity from a physician." },
+  "gym-fitness": { "ruling": "ineligible", "reason": "General fitness is not a qualified medical expense without an LMN." },
+  "cosmetic": { "ruling": "ineligible", "reason": "Cosmetic procedures are excluded under IRS rules." },
+  "general-wellness": { "ruling": "ineligible", "reason": "General wellness items are not qualified medical expenses." },
+  "food-grocery": { "ruling": "ineligible", "reason": "Food and groceries are not qualified medical expenses." },
+  "other-nonmedical": { "ruling": "ineligible", "reason": "Not a medical expense." }
+}
