@@ -7,7 +7,9 @@
     "test": "node --test tests/harness.test.ts",
     "process": "node --env-file=.env src/run.ts",
     "demo:reset": "bash scripts/reset-demo.sh",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "watch": "node --env-file=.env src/watch.ts",
+    "approve": "node --env-file=.env src/approve.ts"
   },
   "keywords": [],
   "author": "",

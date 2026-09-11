@@ -51,6 +51,25 @@ Outputs land in `claims-outbox/`: one folder per claim packet (filled form, atta
 and `cards/latest-card.json`, the single decision card. Every artifact is stamped
 `DEMO / SYNTHETIC — NOT FOR SUBMISSION`. `data/audit.jsonl` is the append-only decision diary.
 
+## The silent loop (demo mode)
+
+```bash
+npm run watch      # agent watches the inbox; drop a receipt in and the card appears
+npm run approve    # the human's "tap Submit": per-packet y/N, balance debits on yes
+```
+
+### 90-second demo script
+
+1. `npm run demo:reset` — world at $280, empty folders. Show `data/fsa-account.json`.
+2. `npm run watch` in one terminal. It idles quietly — that's the point.
+3. Drop `01` (dental), `02` (mixed cart) and `09` (injection receipt) into `receipts-inbox/`.
+4. Card appears: dental $180 packet ready; pharmacy $34.50 with chocolate excluded and the
+   reason stated; the injection receipt at $0 with its attack text quoted on the card.
+5. `npm run approve` — approve the dental packet. Show the balance drop in
+   `data/fsa-account.json` (code-owned, not model prose). Decline the rest.
+6. One sentence to camera: half of FSA holders forfeit; the agent watches so they don't —
+   and it can't spend a cent without the tap you just saw.
+
 ## Tests — the quality gate
 
 ```bash
