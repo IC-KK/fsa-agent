@@ -59,17 +59,19 @@ npm run watch      # agent watches the inbox; drop a receipt in and the card app
 npm run approve    # the human's "tap Submit": per-packet y/N, balance debits on yes
 ```
 
-### 90-second demo script
+### See it in 90 seconds
 
-1. `npm run demo:reset` — world at $280, empty folders. Show `data/fsa-account.json`.
+Everything in the demo video is reproducible from this repo:
+
+1. `npm run demo:reset` — world at $280, empty folders (`data/fsa-account.json` is the ledger).
 2. `npm run watch` in one terminal. It idles quietly — that's the point.
 3. Drop `01` (dental), `02` (mixed cart) and `09` (injection receipt) into `receipts-inbox/`.
-4. Card appears: dental $180 packet ready; pharmacy $34.50 with chocolate excluded and the
-   reason stated; the injection receipt at $0 with its attack text quoted on the card.
-5. `npm run approve` — approve the dental packet. Show the balance drop in
-   `data/fsa-account.json` (code-owned, not model prose). Decline the rest.
-6. One sentence to camera: half of FSA holders forfeit; the agent watches so they don't —
-   and it can't spend a cent without the tap you just saw.
+4. The card appears: dental $180 packet ready; pharmacy $34.50 with the chocolate excluded and
+   the reason stated; the injection receipt at $0 with its attack text quoted on the card.
+5. `npm run approve` — approve a packet and watch the balance drop in
+   `data/fsa-account.json` (code-owned, not model prose). Decline, and nothing changes.
+
+Run it twice if you like — `demo:reset` makes the world identical every time.
 
 ## Tests — the quality gate
 
