@@ -10,7 +10,7 @@ providers). It watches a folder of receipts, works out what's
 claimable under real eligibility rules, assembles reimbursement packets — and only speaks to
 the human once, when there's a decision worth making:
 
-> **$280 expiring Dec 31 — $198.75 ready to claim.**
+> **$280 expiring Dec 31 — $214.50 ready to claim.**
 > Bright Smile Dental, Jun 12 — $180.00 eligible. Packet ready.
 > Maple Pharmacy — $34.50 eligible (Rx + sunscreen); $11.25 chocolate excluded.
 > [submit] [edit] [skip]
@@ -71,7 +71,7 @@ the Mac is awake) and displays the deadline configured in the demo account file.
 not send independent expiration alerts — that's roadmap. Each run is bounded by a shared
 model-call budget (40 calls) covering both orchestration and per-document extraction.
 
-### See it in 90 seconds
+### See it yourself in a few minutes
 
 Everything in the demo video is reproducible from this repo:
 
@@ -81,7 +81,9 @@ Everything in the demo video is reproducible from this repo:
 4. The card appears: dental $180 packet ready; pharmacy $34.50 with the chocolate excluded and
    the reason stated; the injection receipt at $0 with its attack text quoted on the card.
 5. `npm run approve` — approve a packet and watch the balance drop in
-   `data/fsa-account.json` (code-owned, not model prose). Decline, and nothing changes.
+   `data/fsa-account.json` and one committed entry in `data/ledger.jsonl` — the append-only
+   ledger is the authority; the account file's balance is a derived cache of
+   starting balance minus committed ledger entries. Decline, and nothing changes.
 
 Run it twice if you like — `demo:reset` makes the world identical every time.
 
@@ -91,11 +93,15 @@ Run it twice if you like — `demo:reset` makes the world identical every time.
 npm test
 ```
 
-Eleven tests, **zero model calls**: exact-cent mixed-cart split, EOB
-patient-responsibility rule, category-laundering attack, unknown-item fail-closed,
-low-confidence fail-closed, prior-year rejection, duplicate fingerprint, unicode-normalized
-fingerprints, submit-without-approval refused (balance unchanged), balance cap
-(the injection's $9,999 is impossible), and path-sandbox refusal.
+Thirty-seven tests, **zero model calls**, in five families: eligibility (exact-cent
+mixed-cart split, EOB patient-responsibility rules, category-laundering attack,
+unknown-item and low-confidence fail-closed, gross-discount ambiguity), receipt
+reconciliation against printed totals (including the bounded reread: fail→pass,
+fail→fail stays in review, never a third attempt), duplicates (byte-hash, renamed
+copies, draft-time fingerprints, unicode normalization), financial integrity
+(ledger-derived authorization, interrupted-approval recovery through the real CLI,
+repeated approval debits once, insufficient balance changes nothing, forged amounts
+impossible), and path sandboxing (allowlisted folders, packet-ID traversal refused).
 `fixtures/expected.json` is the gold answer key; the agent never reads it at runtime.
 
 ## The nine fixtures

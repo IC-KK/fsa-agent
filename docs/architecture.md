@@ -26,8 +26,9 @@
         │
         ▼
   submit_packet  ──▶ human-in-the-loop INTERRUPT (agent path) or `npm run approve` (CLI path)
-   the only code     │ approved → debit data/fsa-account.json + record claims-index fingerprint
-   that debits       │ declined → nothing changes
+   the only code     │ approved → append data/ledger.jsonl (authoritative) + derive
+   that debits       │ balance into data/fsa-account.json + record claims-index fingerprint
+                     │ declined → nothing changes
         │
         ▼
   data/audit.jsonl  (append-only decision diary for every tool call)

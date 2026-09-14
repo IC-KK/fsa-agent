@@ -7,3 +7,4 @@ data/processed-files.json
 receipts-inbox/*
 !receipts-inbox/.gitkeep
 data/records/
+.DS_Store
