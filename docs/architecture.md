@@ -7,7 +7,7 @@
                          │                                             │
    npm run watch         │  hooks: tool allowlist · shared 40-call     │
    polls every 5s        │  model budget (extraction included)         │
-   polls every 5s        │  system prompt: packer-not-payer,           │
+                         │  system prompt: packer-not-payer,           │
                          │  untrusted documents, fail closed           │
                          └──────────────────┬──────────────────────────┘
                                             │ calls typed tools (zod schemas,
