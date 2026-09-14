@@ -3,6 +3,7 @@ import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { InterruptResponseContent, type AgentResult } from "@strands-agents/sdk";
 import { createAgent } from "./agent.ts";
+import { resetModelBudget } from "./lib/budget.ts";
 import { ROOTS } from "./lib/paths.ts";
 import { fromCents } from "./lib/money.ts";
 
@@ -41,6 +42,7 @@ async function main(): Promise<void> {
   const agent = createAgent();
   const readline = createInterface({ input: process.stdin, output: process.stdout });
 
+  resetModelBudget();
   let result: AgentResult = await agent.invoke(TASK);
 
   // Human-in-the-loop: every submit pauses here until a person answers.

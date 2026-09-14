@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { createAgent } from "./agent.ts";
+import { resetModelBudget } from "./lib/budget.ts";
 import { ROOTS } from "./lib/paths.ts";
 
 /**
@@ -48,6 +49,7 @@ async function main(): Promise<void> {
     console.log(`\n[${new Date().toLocaleTimeString()}] ${pending.length} new document(s): ${pending.join(", ")}`);
     try {
       // Fresh agent per batch: no stale conversation state between batches.
+      resetModelBudget();
       const agent = createAgent();
       await agent.invoke(WATCH_TASK);
       const cardPath = join(ROOTS.outbox, "cards", "latest-card.json");

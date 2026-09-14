@@ -63,8 +63,13 @@ data's home, not a claim that document content never leaves the machine.
 
 ```bash
 npm run watch      # agent watches the inbox; drop a receipt in and the card appears
-npm run approve    # the human's "tap Submit": per-packet y/N, balance debits on yes
+npm run approve    # the human's tap: per-packet y/N, approved locally, demo balance updates
 ```
+
+Scope, stated precisely: the watcher processes new receipts **while it is running** (and
+the Mac is awake) and displays the deadline configured in the demo account file. It does
+not send independent expiration alerts — that's roadmap. Each run is bounded by a shared
+model-call budget (40 calls) covering both orchestration and per-document extraction.
 
 ### See it in 90 seconds
 

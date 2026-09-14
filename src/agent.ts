@@ -3,8 +3,9 @@ import { ALL_TOOLS } from "./tools.ts";
 import { createModel } from "./model.ts";
 import { audit } from "./lib/audit.ts";
 
+import { consumeModelCall } from "./lib/budget.ts";
+
 const ALLOWED_TOOLS = new Set(ALL_TOOLS.map((t) => t.name));
-const MAX_MODEL_CALLS = 25; // hard cap per run — a stuck loop stops instead of billing forever
 
 // Short on purpose. The rules live in code and data files, not in prose.
 const SYSTEM_PROMPT = `You are ClaimSniff, an FSA claim-packing agent. You find eligible expenses in
@@ -47,14 +48,9 @@ export function createAgent(): Agent {
     }
   });
 
-  // Guardrail 2: hard cap on model calls per run (cost + loop protection).
-  let modelCalls = 0;
+  // Guardrail 2: shared per-run model-call budget (orchestrator + extraction).
   agent.addHook(BeforeModelCallEvent, () => {
-    modelCalls += 1;
-    if (modelCalls > MAX_MODEL_CALLS) {
-      audit("hook_model_call_cap", { modelCalls });
-      throw new Error(`Model call cap (${MAX_MODEL_CALLS}) exceeded — stopping run.`);
-    }
+    consumeModelCall("orchestrator");
   });
 
   return agent;

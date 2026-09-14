@@ -3,6 +3,7 @@ import { basename, extname } from "node:path";
 import { Agent, ImageBlock, DocumentBlock, Message, TextBlock } from "@strands-agents/sdk";
 import { ExtractionSchema, CATEGORIES, type Extraction } from "./lib/schemas.ts";
 import { createModel } from "./model.ts";
+import { consumeModelCall } from "./lib/budget.ts";
 
 const EXTRACTOR_PROMPT = `You read one receipt, invoice, EOB, or order document and return ONLY a JSON object.
 
@@ -58,6 +59,7 @@ export async function extractDocument(path: string): Promise<Extraction> {
       suspiciousContent: `File exceeds ${MAX_BYTES} byte cap`,
     };
   }
+  consumeModelCall(`extract:${basename(path)}`);
   const reader = new Agent({
     model: createModel(1500),
     systemPrompt: EXTRACTOR_PROMPT,
