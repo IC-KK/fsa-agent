@@ -3,7 +3,7 @@
   "dental": {
     "ruling": "eligible",
     "reason": "Dental treatment is a qualified medical expense.",
-    "keywords": ["dental", "filling", "composite", "crown", "extraction", "oral evaluation", "orthodont", "cleaning", "tooth"]
+    "keywords": ["dental", "filling", "composite", "crown", "extraction", "oral evaluation", "orthodont", "teeth cleaning", "dental cleaning", "tooth"]
   },
   "vision": {
     "ruling": "eligible",

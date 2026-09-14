@@ -34,13 +34,25 @@ function markProcessed(docId: string, name: string): void {
  * Deterministic category assignment: match the item NAME against rule keywords.
  * The model's proposed category is never trusted for money — an unknown name
  * fails closed to needs_review no matter what the model claimed.
+ *
+ * ALL matching categories are collected; matches whose rulings conflict return
+ * "conflict" (→ needs_review). SPF products follow the numeric IRS rule: an
+ * explicit SPF below 15 disqualifies the sunscreen match.
  */
-export function categorizeByKeywords(description: string): { category: string; rule: Rule } | null {
+export function categorizeByKeywords(description: string): { category: string; rule: Rule } | "conflict" | null {
   const name = description.toLowerCase().normalize("NFKC");
-  for (const [category, rule] of Object.entries(RULES)) {
-    if (rule.keywords.some((kw) => name.includes(kw))) return { category, rule };
+  let matches = Object.entries(RULES).filter(([, rule]) => rule.keywords.some((kw) => name.includes(kw)));
+  const spf = name.match(/spf\s*(\d+)/);
+  if (spf && Number(spf[1]) < 15) {
+    // Below SPF 15 the sunscreen rule does not apply — drop that match.
+    matches = matches.filter(([category]) => category !== "medical-equipment");
+    if (matches.length === 0) return null; // unknown -> needs_review upstream
   }
-  return null;
+  if (matches.length === 0) return null;
+  const rulings = new Set(matches.map(([, rule]) => rule.ruling));
+  if (rulings.size > 1) return "conflict";
+  const [category, rule] = matches[0];
+  return { category, rule };
 }
 
 /**
@@ -199,6 +211,10 @@ export const classifyEligibility = tool({
     }
     const lines: ClassifiedLine[] = lineItems.map((li) => {
       const match = categorizeByKeywords(li.description);
+      if (match === "conflict") {
+        audit("classify_conflicting_item", { docId, description: li.description, modelCategory: li.category });
+        return { description: li.description, amountCents: li.amountCents, category: "conflict", ruling: "needs_review" as const, reason: "Description matches conflicting rule categories — human review required." };
+      }
       if (!match) {
         audit("classify_unknown_item", { docId, description: li.description, modelCategory: li.category });
         return { description: li.description, amountCents: li.amountCents, category: "unknown", ruling: "needs_review" as const, reason: "Item not in rules table — human review required." };

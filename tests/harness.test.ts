@@ -374,6 +374,45 @@ test("consent that does not bind to the exact packet and amount neither approves
   assert.equal(balance(), 280.0);
 });
 
+// ---------------- keyword-safety regressions ----------------
+
+test("keyword safety: household cleaning is not dental; SPF below 15 is not eligible; conflicts require review", async () => {
+  seed("f100000000000001", "kw.png", {
+    lineItems: [
+      { description: "HOUSEHOLD CLEANING SPRAY 32OZ", amountCents: 599, category: "dental" },
+      { description: "TOOTH WHITENING STRIPS 14CT", amountCents: 3499, category: "dental" },
+      { description: "KIDS SUNSCREEN SPF 5 8OZ", amountCents: 899, category: "medical-equipment" },
+      { description: "CHOC CANDY SUNSCREEN SPF 30 NOVELTY", amountCents: 450, category: "medical-equipment" },
+    ],
+    taxCents: 0, totalCents: 5447,
+  });
+  const r = await classifyEligibility.invoke({ docId: "f100000000000001" });
+  assert.equal(r.claimableCents, 0, "none of these may be claimed");
+  const byDesc = Object.fromEntries(r.lines.map((l) => [l.description, l]));
+  assert.equal(byDesc["HOUSEHOLD CLEANING SPRAY 32OZ"].ruling, "needs_review"); // unknown, not dental
+  assert.equal(byDesc["TOOTH WHITENING STRIPS 14CT"].ruling, "needs_review"); // dental vs cosmetic conflict
+  assert.match(byDesc["TOOTH WHITENING STRIPS 14CT"].reason, /conflicting/);
+  assert.notEqual(byDesc["KIDS SUNSCREEN SPF 5 8OZ"].ruling, "eligible"); // SPF < 15
+  assert.equal(byDesc["CHOC CANDY SUNSCREEN SPF 30 NOVELTY"].ruling, "needs_review"); // candy vs SPF conflict
+});
+
+test("keyword safety: existing behavior preserved (dental filling, SPF 30/50, chocolate, massage)", async () => {
+  const { categorizeByKeywords } = await import("../src/tools.ts");
+  const cases: [string, string][] = [
+    ["Composite filling, one surface (tooth #19)", "eligible"],
+    ["AQUA LIP SPF30 .35Z", "eligible"],
+    ["SUNSCREEN SPF50 6OZ", "eligible"],
+    ["CHOC CARAMEL BAG 11OZ", "ineligible"],
+    ["Therapeutic massage - 60 minutes", "needs_lmn"],
+    ["Teeth whitening, cosmetic", "ineligible"],
+  ];
+  for (const [desc, expected] of cases) {
+    const m = categorizeByKeywords(desc);
+    assert.ok(m && m !== "conflict", `${desc} should match cleanly`);
+    assert.equal(m.rule.ruling, expected, desc);
+  }
+});
+
 // ---------------- bounded-reread regressions (deterministic, stubbed extractor) ----------------
 
 const goodRead = () => baseExtraction({

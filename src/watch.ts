@@ -3,6 +3,8 @@ import { join } from "node:path";
 import { createAgent } from "./agent.ts";
 import { resetModelBudget } from "./lib/budget.ts";
 import { ROOTS } from "./lib/paths.ts";
+import { bytesAlreadyHandled } from "./tools.ts";
+import { docIdForBytes } from "./lib/records.ts";
 
 /**
  * The silent loop. Watches the inbox; when a document lands, runs the
@@ -20,14 +22,12 @@ const WATCH_TASK =
   "file you processed (including ones with packets) so it is not processed again. " +
   "Finish by writing the decision card with notify_decision. Never call submit_packet.";
 
-function processedFiles(): Set<string> {
-  const p = join(ROOTS.data, "processed-files.json");
-  return existsSync(p) ? new Set(Object.values(JSON.parse(readFileSync(p, "utf8")) as Record<string, string>)) : new Set();
-}
-
 function pendingFiles(): string[] {
-  const done = processedFiles();
-  return readdirSync(ROOTS.inbox).filter((f) => /\.(pdf|png|jpe?g)$/i.test(f) && !done.has(f));
+  // Same byte-hash dedup as list_new_documents: a renamed copy of handled
+  // bytes is never pending, so no agent is spawned for an empty batch.
+  return readdirSync(ROOTS.inbox)
+    .filter((f) => /\.(pdf|png|jpe?g)$/i.test(f))
+    .filter((f) => !bytesAlreadyHandled(docIdForBytes(readFileSync(join(ROOTS.inbox, f)))));
 }
 
 async function main(): Promise<void> {
