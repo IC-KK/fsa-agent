@@ -154,7 +154,8 @@ test("duplicate fingerprint never files twice", async () => {
   await classifyEligibility.invoke({ docId: "b00000000000000d" });
   const r = await matchAccount.invoke({ docId: "b00000000000000d" });
   assert.equal(r.fileable, false);
-  assert.equal(r.status, "duplicate");
+  assert.equal(r.status, "possible_duplicate");
+  assert.match(String(r.reason), /does not prove/);
 });
 
 test("fingerprint survives filename, case, and unicode-spacing tricks", () => {
@@ -247,6 +248,55 @@ test("the observed wrong gum extraction ($1.63) fails reconciliation and require
   assert.equal(r.status, "needs_review");
   assert.equal(r.claimableCents, 0);
   assert.match(String(r.reason), /reconcile/);
+});
+
+// ---------------- dedup + path-gap regressions ----------------
+
+test("renamed identical receipt produces one draft and is never re-listed", async () => {
+  const { listNewDocuments, bytesAlreadyHandled } = await import("../src/tools.ts");
+  const { docIdForBytes } = await import("../src/lib/records.ts");
+  const bytes = readFileSync(join(ROOTS.fixtures, "01_bright_smile_dental_jun12.pdf"));
+  const docId = docIdForBytes(bytes);
+  await seededDentalPacket(docId);
+  // Same bytes under a new name land in the inbox.
+  copyFileSync(join(ROOTS.fixtures, "01_bright_smile_dental_jun12.pdf"), join(ROOTS.inbox, "totally_new_receipt.pdf"));
+  const listing = await listNewDocuments.invoke({});
+  assert.ok(!listing.files.includes("totally_new_receipt.pdf"), "renamed copy must not be listed as new");
+  assert.ok(bytesAlreadyHandled(docId), "byte-hash guard must recognize the copy");
+  const packets = (await import("node:fs")).readdirSync(join(ROOTS.outbox, "packets")).filter((p) => p.startsWith("packet-"));
+  assert.equal(packets.length, 1, "exactly one draft packet exists");
+  rmSync(join(ROOTS.inbox, "totally_new_receipt.pdf"), { force: true });
+});
+
+test("missing-patient representation changes cannot alter the fingerprint or bypass byte dedup", async () => {
+  const a = claimFingerprint(null, "CVS Pharmacy", "2026-09-14", 649);
+  const b = claimFingerprint("Unknown", "CVS Pharmacy", "2026-09-14", 649);
+  const c = claimFingerprint("  n/a ", "CVS Pharmacy", "2026-09-14", 649);
+  assert.equal(a, b);
+  assert.equal(b, c);
+  assert.notEqual(a, claimFingerprint("Jordan Sample", "CVS Pharmacy", "2026-09-14", 649));
+});
+
+test("draft registration blocks a second image of the same purchase before any approval", async () => {
+  await seededDentalPacket("e000000000000001"); // draft registered at build, nothing approved
+  seed("e000000000000002", "second_photo_same_purchase.pdf", {
+    docType: "invoice", provider: "Bright Smile Dental Group",
+    lineItems: [{ description: "Composite filling, one surface", amountCents: 18000, category: "dental" }],
+  });
+  await classifyEligibility.invoke({ docId: "e000000000000002" });
+  const r = await matchAccount.invoke({ docId: "e000000000000002" });
+  assert.equal(r.fileable, false);
+  assert.equal(r.status, "possible_duplicate");
+});
+
+test("traversal through packet IDs is rejected without changing state", async () => {
+  const before = balance();
+  for (const evil of ["packet-../../../etc/passwd", "packet-....//....//x", "../../data/fsa-account.json", "packet-AAAAAAAAAAAAAAAA"]) {
+    const r = await submitPacket.invoke({ packetId: evil }, approving);
+    assert.equal(r.submitted, false);
+  }
+  assert.equal(balance(), before);
+  assert.ok(!existsSync(join(ROOTS.outbox, "packets", "packet-..")), "no traversal artifacts created");
 });
 
 // ---------------- required integrity regressions ----------------

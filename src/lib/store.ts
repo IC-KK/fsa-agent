@@ -33,7 +33,7 @@ export function debitAccount(cents: number): Account {
 
 interface ClaimsIndex {
   // fingerprint -> record of the claim we already know about
-  [fingerprint: string]: { file: string; status: string; ts: string };
+  [fingerprint: string]: { file: string; status: string; ts: string; docId?: string };
 }
 
 export function readClaimsIndex(): ClaimsIndex {
@@ -41,19 +41,31 @@ export function readClaimsIndex(): ClaimsIndex {
   return JSON.parse(readFileSync(CLAIMS_INDEX_PATH, "utf8"));
 }
 
-export function recordClaim(fingerprint: string, file: string, status: string): void {
+export function recordClaim(fingerprint: string, file: string, status: string, docId?: string): void {
   const index = readClaimsIndex();
-  index[fingerprint] = { file, status, ts: new Date().toISOString() };
+  index[fingerprint] = { file, status, ts: new Date().toISOString(), docId };
   writeFileSync(CLAIMS_INDEX_PATH, JSON.stringify(index, null, 2) + "\n");
 }
 
 /**
- * Duplicate-proofing fingerprint: same patient + provider + service date +
- * amount is the same claim, whatever the filename says.
+ * Canonicalize a party name for fingerprinting. Missing values in any
+ * representation (null, "", "unknown", "n/a") collapse to one sentinel —
+ * we never invent an identity, and representation changes cannot alter
+ * the fingerprint.
  */
-export function claimFingerprint(patient: string, provider: string, dateOfService: string, amountCents: number): string {
-  const norm = (s: string) => s.toLowerCase().normalize("NFKC").replace(/\s+/g, " ").trim();
+export function canonicalParty(value: string | null | undefined): string {
+  const v = (value ?? "").toLowerCase().normalize("NFKC").replace(/\s+/g, " ").trim();
+  return v === "" || v === "unknown" || v === "n/a" || v === "none" ? "(unknown)" : v;
+}
+
+/**
+ * Duplicate-proofing fingerprint: same patient + provider + service date +
+ * amount is the same claim, whatever the filename says. A match flags a
+ * POSSIBLE duplicate — metadata equality does not prove two receipts are
+ * the same physical document.
+ */
+export function claimFingerprint(patient: string | null, provider: string | null, dateOfService: string, amountCents: number): string {
   return createHash("sha256")
-    .update([norm(patient), norm(provider), dateOfService, String(amountCents)].join("|"))
+    .update([canonicalParty(patient), canonicalParty(provider), dateOfService, String(amountCents)].join("|"))
     .digest("hex");
 }

@@ -6,6 +6,7 @@ import { ROOTS, safeResolve } from "./lib/paths.ts";
 import { audit } from "./lib/audit.ts";
 import { fromCents, assertCents } from "./lib/money.ts";
 import { readAccount, debitAccount, readClaimsIndex, recordClaim, claimFingerprint } from "./lib/store.ts";
+import { canonicalParty } from "./lib/store.ts";
 import { docIdForBytes, loadRecord, saveRecord, listRecords, withApprovalLock, type DocRecord, type ClassifiedLine } from "./lib/records.ts";
 import { extractDocument } from "./extractor.ts";
 
@@ -62,6 +63,15 @@ function requireRecord(docId: string): DocRecord {
   return record;
 }
 
+/** Identical bytes (any filename) that already produced a packet or were processed. */
+export function bytesAlreadyHandled(docId: string): DocRecord | null {
+  const record = loadRecord(docId);
+  if (record && (record.packet || docId in readProcessed())) return record;
+  return null;
+}
+
+const PACKET_ID_RE = /^packet-[0-9a-f]{16}$/;
+
 // ---------------------------------------------------------------------------
 
 export const listNewDocuments = tool({
@@ -70,10 +80,10 @@ export const listNewDocuments = tool({
     "List receipt/invoice/EOB files in the inbox that have not been processed yet. Returns file names only.",
   inputSchema: z.object({}).strict(),
   callback: () => {
-    const processed = new Set(Object.values(readProcessed()));
+    // Dedup by BYTES, not names: a renamed copy of a handled file is not new.
     const files = readdirSync(ROOTS.inbox)
       .filter((f) => /\.(pdf|png|jpe?g)$/i.test(f))
-      .filter((f) => !processed.has(f));
+      .filter((f) => !bytesAlreadyHandled(docIdForBytes(readFileSync(join(ROOTS.inbox, f)))));
     audit("list_new_documents", { count: files.length, files });
     return { files };
   },
@@ -87,6 +97,12 @@ export const extractReceipt = tool({
   callback: async ({ file }) => {
     const path = resolveInboxFile(file);
     const docId = docIdForBytes(readFileSync(path));
+    // Identical bytes already handled (any filename): no model call, no new draft.
+    const prior = bytesAlreadyHandled(docId);
+    if (prior) {
+      audit("extract_receipt", { docId, file: basename(path), skipped: "identical_bytes", priorFile: prior.file });
+      return { role: "UNTRUSTED_DOCUMENT", docId, file: basename(path), alreadyProcessed: true, duplicateOf: prior.file, note: "Identical file bytes were already handled — skip this document." };
+    }
     const extraction = await extractDocument(path);
     const record: DocRecord = loadRecord(docId) ?? { docId, file: basename(path) };
     record.file = basename(path);
@@ -186,8 +202,9 @@ export const matchAccount = tool({
     if (!record.extraction || !record.classification) throw new Error("Record is missing extraction or classification.");
     const account = readAccount();
     const { status, claimableCents } = record.classification;
-    const patient = record.extraction.patient ?? "unknown";
-    const provider = record.extraction.provider ?? "unknown";
+    // Canonical missing-value handling — identity is never invented.
+    const patient = record.extraction.patient;
+    const provider = record.extraction.provider;
     const dateOfService = record.extraction.dateOfService;
 
     const finish = (m: NonNullable<DocRecord["match"]>) => {
@@ -211,8 +228,11 @@ export const matchAccount = tool({
     }
     const fingerprint = claimFingerprint(patient, provider, dateOfService, claimableCents);
     const index = readClaimsIndex();
-    if (index[fingerprint]) {
-      return finish({ fileable: false, status: "duplicate", fingerprint, fileCents: 0, reason: `Duplicate of already-processed claim from '${index[fingerprint].file}'.`, storedAt: stamp() });
+    const hit = index[fingerprint];
+    if (hit && hit.docId !== docId) {
+      // Different bytes, same purchase metadata: a POSSIBLE duplicate. A
+      // metadata fingerprint match does not prove two receipts are identical.
+      return finish({ fileable: false, status: "possible_duplicate", fingerprint, fileCents: 0, reason: `Possible duplicate: matches the patient/provider/date/amount of '${hit.file}' (${hit.status}). Flagged for human review — a metadata match does not prove the receipts are identical.`, storedAt: stamp() });
     }
     const remainingCents = Math.round(account.remainingBalance * 100);
     const fileCents = Math.min(claimableCents, remainingCents);
@@ -240,8 +260,12 @@ export const buildPacket = tool({
     const amountCents = record.match.fileCents;
     assertCents(amountCents, "packet amount");
     const packetId = `packet-${docId}`;
-    const dir = join(ROOTS.outbox, "packets", packetId);
+    if (!PACKET_ID_RE.test(packetId)) throw new Error(`Invalid packet id: ${packetId}`);
+    const dir = safeResolve(join("claims-outbox", "packets", packetId), ["outbox"]);
     mkdirSync(join(dir, "attachments"), { recursive: true });
+    // Register the draft immediately: from this moment the fingerprint blocks
+    // duplicate drafts, before any approval happens.
+    recordClaim(record.match.fingerprint, record.file, "draft", docId);
     copyFileSync(resolveInboxFile(record.file), join(dir, "attachments", record.file));
     const account = readAccount();
     const form = {
@@ -250,8 +274,8 @@ export const buildPacket = tool({
       packetId, docId, fingerprint: record.match.fingerprint,
       accountHolder: account.accountHolder,
       planYear: account.planYear,
-      patient: record.extraction.patient ?? "unknown",
-      provider: record.extraction.provider ?? "unknown",
+      patient: canonicalParty(record.extraction.patient),
+      provider: canonicalParty(record.extraction.provider),
       dateOfService: record.extraction.dateOfService,
       descriptionOfService: note ?? record.classification.lines.filter((l) => l.ruling === "eligible").map((l) => l.description).join("; "),
       amountRequested: fromCents(amountCents),
@@ -311,6 +335,12 @@ export const submitPacket = tool({
   inputSchema: z.object({ packetId: z.string() }).strict(),
   callback: ({ packetId }, context) => {
     if (!context) throw new Error("submit_packet requires an execution context");
+    // Validate the ID shape before it touches any path — traversal attempts
+    // are refused here, with zero state change.
+    if (!PACKET_ID_RE.test(packetId)) {
+      audit("submit_packet", { packetId: packetId.slice(0, 60), refused: "invalid_packet_id" });
+      return { submitted: false, reason: "Invalid packet id format." };
+    }
     const docId = packetId.replace(/^packet-/, "");
     const record = loadRecord(docId);
     if (!record?.packet) return { submitted: false, reason: `No packet exists with id '${packetId}'.` };
@@ -353,8 +383,8 @@ export const submitPacket = tool({
       fresh.packet.approvedAt = new Date().toISOString();
       saveRecord(fresh);
       const account = debitAccount(amountCents);
-      recordClaim(fresh.match.fingerprint, fresh.file, "submitted");
-      const formPath = join(ROOTS.outbox, "packets", packetId, "form.json");
+      recordClaim(fresh.match.fingerprint, fresh.file, "submitted", docId);
+      const formPath = safeResolve(join("claims-outbox", "packets", packetId, "form.json"), ["outbox"]);
       if (existsSync(formPath)) {
         const form = JSON.parse(readFileSync(formPath, "utf8"));
         form.status = `SUBMITTED (demo) at ${fresh.packet.approvedAt}`;
@@ -372,7 +402,7 @@ export const skipPacket = tool({
   inputSchema: z.object({ docId: z.string(), status: z.string() }).strict(),
   callback: ({ docId, status }) => {
     const record = requireRecord(docId);
-    if (record.match?.fingerprint) recordClaim(record.match.fingerprint, record.file, status);
+    if (record.match?.fingerprint) recordClaim(record.match.fingerprint, record.file, status, docId);
     markProcessed(docId, record.file);
     audit("skip_packet", { docId, file: record.file, status });
     return { recorded: true, status };
