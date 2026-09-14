@@ -5,6 +5,7 @@ cd "$(dirname "$0")/.."
 
 rm -rf claims-outbox/packets claims-outbox/cards
 rm -f  data/claims-index.json data/processed-files.json data/audit.jsonl
+rm -rf data/records data/.approval-lock
 find receipts-inbox -type f ! -name '.gitkeep' -delete 2>/dev/null || true
 
 cat > data/fsa-account.json <<'EOF'
