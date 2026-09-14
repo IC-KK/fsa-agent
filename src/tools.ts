@@ -143,7 +143,27 @@ export const classifyEligibility = tool({
       if (patientResponsibilityCents == null) {
         return finish({ status: "needs_review", claimableCents: 0, lines, reason: "EOB missing an explicit patient-responsibility amount.", storedAt: new Date().toISOString() });
       }
-      claimableCents = Math.min(claimableCents, patientResponsibilityCents) || patientResponsibilityCents;
+      // Cap eligible lines at the patient's responsibility. Zero eligible lines
+      // means zero claimable — responsibility alone never creates a claim.
+      claimableCents = Math.min(claimableCents, patientResponsibilityCents);
+    } else {
+      // Reconciliation: net lines + explicit adjustments must match the printed
+      // total. Lines are net of their own discounts, so the order-level discount
+      // is only applied in the alternate (gross-lines) check — never twice.
+      const { totalCents, taxCents, shippingCents, discountCents } = record.extraction;
+      const lineSum = lineItems.reduce((s, l) => s + l.amountCents, 0);
+      if (lineItems.length > 0) {
+        if (totalCents == null) {
+          return finish({ status: "needs_review", claimableCents: 0, lines, reason: "No printed total extracted — cannot reconcile the receipt.", storedAt: new Date().toISOString() });
+        }
+        const adj = (taxCents ?? 0) + (shippingCents ?? 0);
+        const netMatches = lineSum + adj === totalCents;
+        const grossMatches = discountCents != null && lineSum - discountCents + adj === totalCents;
+        if (!netMatches && !grossMatches) {
+          audit("reconciliation_mismatch", { docId, lineSum, taxCents, shippingCents, discountCents, totalCents });
+          return finish({ status: "needs_review", claimableCents: 0, lines, reason: `Line amounts do not reconcile with the printed total (${fromCents(lineSum)} + adjustments ≠ ${fromCents(totalCents)}) — human review required.`, storedAt: new Date().toISOString() });
+        }
+      }
     }
     assertCents(claimableCents, "claimableCents");
     const anyNeedsLmn = lines.some((l) => l.ruling === "needs_lmn");

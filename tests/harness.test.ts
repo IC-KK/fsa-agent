@@ -40,12 +40,21 @@ function balance(): number {
   return JSON.parse(readFileSync(ACCOUNT_PATH, "utf8")).remainingBalance;
 }
 
-const baseExtraction = (over: Partial<Extraction>): Extraction & { storedAt: string } => ({
-  readable: true, docType: "receipt", patient: "Jordan Sample", provider: "Test Provider",
-  dateOfService: "2026-06-12", lineItems: [], totalCents: null,
-  patientResponsibilityCents: null, confidence: 0.95, suspiciousContent: null,
-  storedAt: new Date().toISOString(), ...over,
-});
+const baseExtraction = (over: Partial<Extraction>): Extraction & { storedAt: string } => {
+  const merged = {
+    readable: true, docType: "receipt" as const, patient: "Jordan Sample", provider: "Test Provider",
+    dateOfService: "2026-06-12", lineItems: [] as Extraction["lineItems"], totalCents: null as number | null,
+    taxCents: null, shippingCents: null, discountCents: null,
+    patientResponsibilityCents: null, confidence: 0.95, suspiciousContent: null,
+    storedAt: new Date().toISOString(), ...over,
+  };
+  // Unless a test says otherwise, seeds reconcile: total = net lines + tax + shipping.
+  if (merged.totalCents === null && !("totalCents" in over) && merged.docType !== "eob") {
+    merged.totalCents =
+      merged.lineItems.reduce((s, l) => s + l.amountCents, 0) + (merged.taxCents ?? 0) + (merged.shippingCents ?? 0);
+  }
+  return merged;
+};
 
 function seed(docId: string, file: string, extraction: Partial<Extraction>): DocRecord {
   const record: DocRecord = { docId, file, extraction: baseExtraction(extraction) };
@@ -169,6 +178,75 @@ test("paths outside the four allowed folders are refused", () => {
   assert.throws(() => safeResolve("/etc/passwd"), PathViolationError);
   assert.throws(() => safeResolve("src/agent.ts"), PathViolationError);
   assert.ok(safeResolve("receipts-inbox/receipt.pdf", ["inbox"]));
+});
+
+// ---------------- EOB + reconciliation regressions ----------------
+
+test("EOB with only unknown lines yields zero, not the responsibility amount", async () => {
+  seed("d000000000000001", "eob1.pdf", {
+    docType: "eob", patientResponsibilityCents: 6500,
+    lineItems: [{ description: "MISC SVC CODE 99999", amountCents: 21200, category: "lab-diagnostics" }],
+  });
+  const r = await classifyEligibility.invoke({ docId: "d000000000000001" });
+  assert.equal(r.claimableCents, 0);
+  assert.equal(r.status, "needs_review");
+});
+
+test("EOB with only ineligible lines yields zero, not the responsibility amount", async () => {
+  seed("d000000000000002", "eob2.pdf", {
+    docType: "eob", patientResponsibilityCents: 6500,
+    lineItems: [{ description: "Teeth whitening, cosmetic", amountCents: 21200, category: "cosmetic" }],
+  });
+  const r = await classifyEligibility.invoke({ docId: "d000000000000002" });
+  assert.equal(r.claimableCents, 0);
+  assert.equal(r.status, "ineligible");
+});
+
+test("eligible EOB is capped at patient responsibility; missing responsibility requires review", async () => {
+  seed("d000000000000003", "eob3.pdf", {
+    docType: "eob", patientResponsibilityCents: 6500,
+    lineItems: [{ description: "Comprehensive metabolic panel lab test", amountCents: 41000, category: "lab-diagnostics" }],
+  });
+  const capped = await classifyEligibility.invoke({ docId: "d000000000000003" });
+  assert.equal(capped.claimableCents, 6500);
+  seed("d000000000000004", "eob4.pdf", {
+    docType: "eob", patientResponsibilityCents: null,
+    lineItems: [{ description: "Lipid panel lab test", amountCents: 19800, category: "lab-diagnostics" }],
+  });
+  const missing = await classifyEligibility.invoke({ docId: "d000000000000004" });
+  assert.equal(missing.status, "needs_review");
+  assert.equal(missing.claimableCents, 0);
+});
+
+test("CVS paper receipt arithmetic reconciles: 649+169+100 net lines + 52 tax = 970 total", async () => {
+  seed("d000000000000005", "cvs.jpg", {
+    provider: "CVS Pharmacy", dateOfService: "2026-09-14",
+    lineItems: [
+      { description: "AQUA LIP SPF30 .35Z", amountCents: 649, category: "medical-equipment" },
+      { description: "TRDNT SNGL MNTB 14CT", amountCents: 169, category: "food-grocery" },
+      { description: "TRDNT SNGL ORIG 14CT", amountCents: 100, category: "food-grocery" },
+    ],
+    taxCents: 52, discountCents: 69, totalCents: 970,
+  });
+  const r = await classifyEligibility.invoke({ docId: "d000000000000005" });
+  assert.notEqual(r.status, "needs_review");
+  assert.equal(r.claimableCents, 649);
+});
+
+test("the observed wrong gum extraction ($1.63) fails reconciliation and requires review", async () => {
+  seed("d000000000000006", "cvs-bad.jpg", {
+    provider: "CVS Pharmacy", dateOfService: "2026-09-14",
+    lineItems: [
+      { description: "AQUA LIP SPF30 .35Z", amountCents: 649, category: "medical-equipment" },
+      { description: "TRDNT GUM", amountCents: 163, category: "food-grocery" },
+      { description: "TRDNT GUM 2", amountCents: 100, category: "food-grocery" },
+    ],
+    taxCents: 52, totalCents: 970,
+  });
+  const r = await classifyEligibility.invoke({ docId: "d000000000000006" });
+  assert.equal(r.status, "needs_review");
+  assert.equal(r.claimableCents, 0);
+  assert.match(String(r.reason), /reconcile/);
 });
 
 // ---------------- required integrity regressions ----------------

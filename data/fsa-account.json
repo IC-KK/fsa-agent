@@ -2,8 +2,7 @@
   "accountHolder": "Sample User",
   "planYear": 2026,
   "annualElection": 2000,
-  "remainingBalance": 65.5,
+  "remainingBalance": 280,
   "spendDeadline": "2026-12-31",
-  "claimFilingDeadline": "2027-03-31",
-  "note": "Synthetic demo account. FSA administrators do not offer public APIs; real products v1 use user-entered balances exactly like this."
+  "claimFilingDeadline": "2027-03-31"
 }

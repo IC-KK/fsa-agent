@@ -33,6 +33,9 @@ export const ExtractionSchema = z.object({
   dateOfService: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
   lineItems: z.array(LineItemSchema),
   totalCents: z.number().int().nonnegative().nullable(),
+  taxCents: z.number().int().nonnegative().nullable().default(null),
+  shippingCents: z.number().int().nonnegative().nullable().default(null),
+  discountCents: z.number().int().nonnegative().nullable().default(null),
   // EOBs only: the slice of the bill that is actually the patient's to pay.
   patientResponsibilityCents: z.number().int().nonnegative().nullable(),
   confidence: z.number().min(0).max(1),
