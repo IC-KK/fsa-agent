@@ -53,7 +53,7 @@ async function main(): Promise<void> {
       const cardPath = join(ROOTS.outbox, "cards", "latest-card.json");
       if (existsSync(cardPath)) {
         const card = JSON.parse(readFileSync(cardPath, "utf8"));
-        console.log(`\n📋 ${card.headline}`);
+        console.log(`\n📋 ${card.headline}  [demo account — synthetic]`);
         for (const item of card.items) console.log(`   [${item.status}] ${item.file} — ${item.summary}`);
         console.log(`   → review packets in claims-outbox/, then: npm run approve\n`);
       }

@@ -26,7 +26,7 @@ function printCard(): void {
   const card = JSON.parse(readFileSync(cardPath, "utf8"));
   console.log("\n" + "═".repeat(64));
   console.log("  DECISION CARD —", card.headline);
-  console.log("  Balance:", `$${card.remainingBalance.toFixed(2)}`, "· spend by", card.spendDeadline);
+  console.log("  DEMO ACCOUNT (synthetic) · Balance:", `$${card.remainingBalance.toFixed(2)}`, "· spend by", card.spendDeadline);
   console.log("═".repeat(64));
   for (const item of card.items) {
     console.log(`  [${item.status}] ${item.file} — ${item.summary}`);

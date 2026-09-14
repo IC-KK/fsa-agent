@@ -255,6 +255,7 @@ export const notifyDecision = tool({
     const account = readAccount();
     const card = {
       banner: SYNTHETIC_BANNER,
+      accountLabel: "Demo account (synthetic) — not a real FSA",
       ts: new Date().toISOString(),
       headline,
       remainingBalance: account.remainingBalance,
