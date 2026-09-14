@@ -26,7 +26,17 @@ async function main(): Promise<void> {
     const amount = `$${(packet.amountCents / 100).toFixed(2)}`;
     const answer = await readline.question(`Approve packet for ${amount}? [y/N] `);
     const approved = answer.trim().toLowerCase() === "y";
-    const approvingContext = { interrupt: () => approved } as unknown as ToolContext;
+    // Consent is bound to the exact packet id and amount that were displayed.
+    // If the tool's freshly loaded packet differs, this returns a mismatch
+    // sentinel and the tool refuses without approving OR declining.
+    const shownPacketId = packet.packetId;
+    const approvingContext = {
+      interrupt: (params: { reason?: { packetId?: string; amount?: string } }) => {
+        const r = params?.reason;
+        if (r?.packetId !== shownPacketId || r?.amount !== amount) return "consent-mismatch";
+        return approved;
+      },
+    } as unknown as ToolContext;
     const result = await submitPacket.invoke({ packetId: packet.packetId }, approvingContext);
     console.log(
       result.submitted && "remainingBalance" in result

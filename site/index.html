@@ -309,7 +309,8 @@
         <div class="vow"><span class="no">iii.</span><p><strong>It can't guess.</strong> Blurry receipt? Unknown item? Anything uncertain
           fails closed to human review. Never "eligible enough."</p></div>
         <div class="vow"><span class="no">iv.</span><p><strong>It can't wander.</strong> Tools are sandboxed to four project folders,
-          capped at 25 model calls per run, and every decision lands in an append-only audit log.</p></div>
+          every run shares a 40-call model budget (document reading included), and every decision
+          lands in an append-only audit log.</p></div>
       </div>
     </div>
     <div>
@@ -342,7 +343,8 @@
       <a class="proof-card" href="https://github.com/IC-KK/fsa-agent/blob/main/docs/architecture.md" target="_blank" rel="noopener">
         <span class="pc-title">Architecture →</span>
         <p>Strands agent loop: 9 zod-typed tools, a <code>BeforeToolCall</code> allowlist hook, a
-        25-call cap hook, and a <code>context.interrupt()</code> human gate on the one tool that debits.</p></a>
+        shared 40-call budget across orchestration and extraction, and a <code>context.interrupt()</code>
+        human gate on the one tool that debits.</p></a>
       <a class="proof-card" href="https://github.com/IC-KK/fsa-agent#see-it-in-90-seconds" target="_blank" rel="noopener">
         <span class="pc-title">Reproduce the demo →</span>
         <p>One reset command returns the world to $280. Run the exact demo yourself from the repo

@@ -5,7 +5,7 @@ import { tool } from "@strands-agents/sdk";
 import { ROOTS, safeResolve } from "./lib/paths.ts";
 import { audit } from "./lib/audit.ts";
 import { fromCents, assertCents } from "./lib/money.ts";
-import { readAccount, debitAccount, readClaimsIndex, recordClaim, claimFingerprint } from "./lib/store.ts";
+import { readAccount, debitAccount, readClaimsIndex, recordClaim, claimFingerprint, ledgerHas } from "./lib/store.ts";
 import { canonicalParty } from "./lib/store.ts";
 import { docIdForBytes, loadRecord, saveRecord, listRecords, withApprovalLock, type DocRecord, type ClassifiedLine } from "./lib/records.ts";
 import { extractDocument } from "./extractor.ts";
@@ -220,7 +220,13 @@ export const classifyEligibility = tool({
         const adj = (taxCents ?? 0) + (shippingCents ?? 0);
         const netMatches = lineSum + adj === totalCents;
         const grossMatches = discountCents != null && lineSum - discountCents + adj === totalCents;
-        if (!netMatches && !grossMatches) {
+        if (!netMatches && grossMatches) {
+          // Lines reconcile only as GROSS amounts: the discount cannot be
+          // attributed per line, so claiming line amounts would over-claim.
+          audit("reconciliation_gross_only", { docId, lineSum, discountCents, totalCents });
+          return finish({ status: "needs_review", claimableCents: 0, lines, reason: "Line amounts reconcile only before discounts — per-line discount attribution is ambiguous, so nothing is claimed without human review.", storedAt: new Date().toISOString() });
+        }
+        if (!netMatches) {
           audit("reconciliation_mismatch", { docId, lineSum, taxCents, shippingCents, discountCents, totalCents });
           return finish({ status: "needs_review", claimableCents: 0, lines, reason: `Line amounts do not reconcile with the printed total (${fromCents(lineSum)} + adjustments ≠ ${fromCents(totalCents)}) — human review required.`, storedAt: new Date().toISOString() });
         }
@@ -301,6 +307,15 @@ export const buildPacket = tool({
     const record = requireRecord(docId);
     if (!record.match?.fileable || !record.match.fingerprint || !record.extraction || !record.classification) {
       throw new Error("Refusing to build: no successful account match stored for this document.");
+    }
+    // Terminal states are enforced: an approved or declined packet is never
+    // silently reopened, and rebuilding an awaiting packet is idempotent.
+    if (record.packet) {
+      const s = record.packet.status;
+      if (s === "approved" || s === "approving" as string) throw new Error(`Packet ${record.packet.packetId} is already ${s} — rebuild refused.`);
+      if (s === "declined") throw new Error(`Packet ${record.packet.packetId} was declined — rebuilding cannot silently reopen it.`);
+      audit("build_packet", { docId, packetId: record.packet.packetId, idempotent: true });
+      return { packetId: record.packet.packetId, dir: record.packet.dir, amount: fromCents(record.packet.amountCents), alreadyBuilt: true };
     }
     const amountCents = record.match.fileCents;
     assertCents(amountCents, "packet amount");
@@ -390,8 +405,8 @@ export const submitPacket = tool({
     const docId = packetId.replace(/^packet-/, "");
     const record = loadRecord(docId);
     if (!record?.packet) return { submitted: false, reason: `No packet exists with id '${packetId}'.` };
-    if (record.packet.status !== "awaiting_approval") {
-      return { submitted: false, reason: `Packet is '${record.packet.status}' — only awaiting_approval packets can be submitted, and never twice.` };
+    if (record.packet.status === "approved" || record.packet.status === "declined") {
+      return { submitted: false, reason: `Packet is '${record.packet.status}' — terminal; a repeated approval never debits twice.` };
     }
     const amountCents = record.packet.amountCents;
     // The approval names the exact packet and amount being committed.
@@ -399,36 +414,62 @@ export const submitPacket = tool({
       name: `approve_submit_${packetId}_${amountCents}`,
       reason: { packetId, amount: fromCents(amountCents), question: "Submit this claim packet?" },
     });
-    const approved = approval === true || approval === "yes" || (typeof approval === "object" && approval?.approved === true);
+    const approved = approval === true || approval === "yes" || (typeof approval === "object" && approval !== null && approval.approved === true);
+    const declined = approval === false || approval === "no" || (typeof approval === "object" && approval !== null && approval.approved === false);
 
     return withApprovalLock(() => {
       // Re-load under the lock: another approval may have run meanwhile.
       const fresh = loadRecord(docId);
       if (!fresh?.packet || !fresh.match?.fingerprint) return { submitted: false, reason: "Packet record missing." };
-      if (fresh.packet.status !== "awaiting_approval") {
-        audit("submit_packet", { packetId, refused: "already_" + fresh.packet.status });
-        return { submitted: false, reason: `Packet already ${fresh.packet.status} — a repeated approval never debits twice.` };
+      const status = fresh.packet.status;
+      if (status === "approved" || status === "declined") {
+        audit("submit_packet", { packetId, refused: "already_" + status });
+        return { submitted: false, reason: `Packet already ${status} — a repeated approval never debits twice.` };
       }
       if (fresh.packet.amountCents !== amountCents) {
         audit("submit_packet", { packetId, refused: "amount_changed" });
-        return { submitted: false, reason: "Packet amount changed since approval — approve again." };
+        return { submitted: false, reason: "Packet amount changed since approval was given — approve again." };
       }
+      if (!approved && !declined) {
+        audit("submit_packet", { packetId, refused: "consent_mismatch" });
+        return { submitted: false, reason: "Consent did not bind to this exact packet and amount — nothing changed. Run approval again." };
+      }
+      const debitLanded = ledgerHas(packetId);
       if (!approved) {
-        fresh.packet.status = "declined";
-        saveRecord(fresh);
-        audit("submit_packet", { packetId, approved: false });
-        return { submitted: false, reason: "Human declined." };
+        if (status === "approving" && debitLanded) {
+          // The consented debit already landed in the ledger; a decline cannot
+          // un-move money. Finalize the committed transaction instead.
+          audit("submit_packet", { packetId, note: "decline_after_ledger_commit — finalizing" });
+        } else {
+          fresh.packet.status = "declined";
+          saveRecord(fresh);
+          audit("submit_packet", { packetId, approved: false });
+          return { submitted: false, reason: "Human declined." };
+        }
       }
-      const remainingCents = Math.round(readAccount().remainingBalance * 100);
-      if (remainingCents < amountCents) {
-        audit("submit_packet", { packetId, refused: "insufficient_balance" });
-        return { submitted: false, reason: `Insufficient balance: ${fromCents(remainingCents)} available, ${fromCents(amountCents)} requested. No state changed.` };
+      if (status === "awaiting_approval" && !debitLanded) {
+        const remainingCents = Math.round(readAccount().remainingBalance * 100);
+        if (remainingCents < amountCents) {
+          audit("submit_packet", { packetId, refused: "insufficient_balance" });
+          return { submitted: false, reason: `Insufficient balance: ${fromCents(remainingCents)} available, ${fromCents(amountCents)} requested. No state changed.` };
+        }
       }
-      // Authoritative state transition first (atomic temp+rename), then debit.
+      // Two-phase with recovery: mark intent, commit to the ledger, finalize.
+      // A crash or write failure at any point leaves 'approving' + the ledger,
+      // and the next approval attempt completes exactly once.
+      fresh.packet.status = "approving";
+      fresh.packet.txnId = packetId;
+      saveRecord(fresh);
+      let account;
+      try {
+        account = debitAccount(amountCents, packetId);
+      } catch (err) {
+        audit("submit_packet", { packetId, error: (err as Error).message, state: "approving_retryable" });
+        return { submitted: false, reason: `Ledger write failed (${(err as Error).message}) — state preserved; run approval again to recover. No duplicate debit is possible.` };
+      }
       fresh.packet.status = "approved";
       fresh.packet.approvedAt = new Date().toISOString();
       saveRecord(fresh);
-      const account = debitAccount(amountCents);
       recordClaim(fresh.match.fingerprint, fresh.file, "submitted", docId);
       const formPath = safeResolve(join("claims-outbox", "packets", packetId, "form.json"), ["outbox"]);
       if (existsSync(formPath)) {

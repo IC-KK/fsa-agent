@@ -43,7 +43,8 @@ export interface DocRecord {
     packetId: string;
     dir: string;
     amountCents: number;
-    status: "awaiting_approval" | "approved" | "declined";
+    status: "awaiting_approval" | "approving" | "approved" | "declined";
+    txnId?: string;
     storedAt: string;
     approvedAt?: string;
   };

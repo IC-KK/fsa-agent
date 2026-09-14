@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, appendFileSync, renameSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { ROOTS } from "./paths.ts";
@@ -6,12 +6,14 @@ import { assertCents } from "./money.ts";
 
 const ACCOUNT_PATH = join(ROOTS.data, "fsa-account.json");
 const CLAIMS_INDEX_PATH = join(ROOTS.data, "claims-index.json");
+const LEDGER_PATH = join(ROOTS.data, "ledger.jsonl");
 
 export interface Account {
   accountHolder: string;
   planYear: number;
   annualElection: number;
-  remainingBalance: number; // dollars in the human-readable file
+  remainingBalance: number; // dollars — derived cache; the ledger is authoritative
+  startingBalance?: number; // dollars at demo reset; remaining = starting - sum(ledger)
   spendDeadline: string;
   claimFilingDeadline: string;
   note?: string;
@@ -21,13 +23,47 @@ export function readAccount(): Account {
   return JSON.parse(readFileSync(ACCOUNT_PATH, "utf8"));
 }
 
-export function debitAccount(cents: number): Account {
+interface LedgerEntry { txnId: string; cents: number; ts: string }
+
+export function readLedger(): LedgerEntry[] {
+  if (!existsSync(LEDGER_PATH)) return [];
+  return readFileSync(LEDGER_PATH, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l));
+}
+
+export function ledgerHas(txnId: string): boolean {
+  return readLedger().some((e) => e.txnId === txnId);
+}
+
+// Test-only injection point for write-failure recovery tests.
+let injectedFailure: "ledger" | "balance" | null = null;
+export function __injectWriteFailure(kind: "ledger" | "balance" | null): void {
+  injectedFailure = kind;
+}
+
+/**
+ * Exactly-once debit. The append-only ledger is the source of truth; the
+ * account's remainingBalance is recomputed from starting - sum(ledger) and
+ * written atomically. Calling again with the same txnId never appends twice,
+ * and a crash between append and balance write is healed on retry because
+ * the balance is derived, not incremented.
+ */
+export function debitAccount(cents: number, txnId: string): Account {
   assertCents(cents, "debit");
+  if (!ledgerHas(txnId)) {
+    if (injectedFailure === "ledger") { injectedFailure = null; throw new Error("injected ledger write failure"); }
+    appendFileSync(LEDGER_PATH, JSON.stringify({ txnId, cents, ts: new Date().toISOString() }) + "\n");
+  }
+  if (injectedFailure === "balance") { injectedFailure = null; throw new Error("injected balance write failure"); }
   const account = readAccount();
-  const remainingCents = Math.round(account.remainingBalance * 100) - cents;
-  if (remainingCents < 0) throw new Error("Debit exceeds remaining balance");
+  const startingCents = Math.round((account.startingBalance ?? account.remainingBalance) * 100);
+  const spentCents = readLedger().reduce((s, e) => s + e.cents, 0);
+  const remainingCents = startingCents - spentCents;
+  if (remainingCents < 0) throw new Error("Ledger exceeds starting balance");
+  account.startingBalance = startingCents / 100;
   account.remainingBalance = remainingCents / 100;
-  writeFileSync(ACCOUNT_PATH, JSON.stringify(account, null, 2) + "\n");
+  const tmp = ACCOUNT_PATH + ".tmp";
+  writeFileSync(tmp, JSON.stringify(account, null, 2) + "\n");
+  renameSync(tmp, ACCOUNT_PATH);
   return account;
 }
 

@@ -5,7 +5,8 @@
    receipts-inbox/       │  Strands Agent loop (Claude Sonnet 4.5      │
    (PDF/PNG/JPG lands) ──▶  on Amazon Bedrock)                         │
                          │                                             │
-   npm run watch         │  hooks: tool allowlist · 25-model-call cap  │
+   npm run watch         │  hooks: tool allowlist · shared 40-call     │
+   polls every 5s        │  model budget (extraction included)         │
    polls every 5s        │  system prompt: packer-not-payer,           │
                          │  untrusted documents, fail closed           │
                          └──────────────────┬──────────────────────────┘

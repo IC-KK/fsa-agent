@@ -20,13 +20,14 @@ const FRESH_ACCOUNT = {
   planYear: 2026,
   annualElection: 2000.0,
   remainingBalance: 280.0,
+  startingBalance: 280.0,
   spendDeadline: "2026-12-31",
   claimFilingDeadline: "2027-03-31",
 };
 
 function resetState(): void {
   writeFileSync(ACCOUNT_PATH, JSON.stringify(FRESH_ACCOUNT, null, 2) + "\n");
-  for (const f of ["claims-index.json", "processed-files.json"]) {
+  for (const f of ["claims-index.json", "processed-files.json", "ledger.jsonl"]) {
     if (existsSync(join(ROOTS.data, f))) rmSync(join(ROOTS.data, f));
   }
   rmSync(join(ROOTS.data, "records"), { recursive: true, force: true });
@@ -301,6 +302,78 @@ test("traversal through packet IDs is rejected without changing state", async ()
   assert.ok(!existsSync(join(ROOTS.outbox, "packets", "packet-..")), "no traversal artifacts created");
 });
 
+// ---------------- audit-fix regressions (terminal states, gross discounts, atomic debit) ----------------
+
+test("build → approve → rebuild → approve: total debit occurs exactly once", async () => {
+  await seededDentalPacket("a100000000000001");
+  const first = await submitPacket.invoke({ packetId: "packet-a100000000000001" }, approving);
+  assert.equal(first.submitted, true);
+  assert.equal(balance(), 100.0);
+  // Rebuild must not reopen an approved packet.
+  await assert.rejects(() => Promise.resolve(buildPacket.invoke({ docId: "a100000000000001" })), /already approved/);
+  assert.equal(loadRecord("a100000000000001")?.packet?.status, "approved");
+  const again = await submitPacket.invoke({ packetId: "packet-a100000000000001" }, approving);
+  assert.equal(again.submitted, false);
+  assert.equal(balance(), 100.0);
+});
+
+test("rebuilding a declined packet cannot silently reopen it", async () => {
+  await seededDentalPacket("a100000000000002");
+  const declinedResult = await submitPacket.invoke({ packetId: "packet-a100000000000002" }, denying);
+  assert.equal(declinedResult.submitted, false);
+  assert.equal(loadRecord("a100000000000002")?.packet?.status, "declined");
+  await assert.rejects(() => Promise.resolve(buildPacket.invoke({ docId: "a100000000000002" })), /declined.*cannot silently reopen/);
+  assert.equal(loadRecord("a100000000000002")?.packet?.status, "declined");
+});
+
+test("rebuilding an awaiting packet is idempotent (same packet, still one draft)", async () => {
+  await seededDentalPacket("a100000000000003");
+  const again = await buildPacket.invoke({ docId: "a100000000000003" });
+  assert.equal(again.packetId, "packet-a100000000000003");
+  assert.equal(loadRecord("a100000000000003")?.packet?.status, "awaiting_approval");
+});
+
+test("gross-only discount reconciliation claims nothing: $10 item discounted to $8 requires review", async () => {
+  seed("a100000000000004", "discounted.png", {
+    lineItems: [{ description: "SUNSCREEN SPF50 6OZ", amountCents: 1000, category: "medical-equipment" }],
+    discountCents: 200, taxCents: 0, totalCents: 800,
+  });
+  const r = await classifyEligibility.invoke({ docId: "a100000000000004" });
+  assert.equal(r.status, "needs_review");
+  assert.equal(r.claimableCents, 0);
+  assert.match(String(r.reason), /before discounts/);
+});
+
+test("injected balance-write failure: no lost debit, retry completes exactly once, no duplicate", async () => {
+  const { __injectWriteFailure, readLedger } = await import("../src/lib/store.ts");
+  await seededDentalPacket("a100000000000005");
+  __injectWriteFailure("balance");
+  const failed = await submitPacket.invoke({ packetId: "packet-a100000000000005" }, approving);
+  assert.equal(failed.submitted, false);
+  assert.match(String(failed.reason), /run approval again to recover/);
+  assert.equal(loadRecord("a100000000000005")?.packet?.status, "approving", "state preserved for recovery");
+  assert.equal(readLedger().filter((e) => e.txnId === "packet-a100000000000005").length, 1, "debit committed to ledger");
+  // Retry: recovery finalizes using the existing ledger entry — exactly once.
+  const retried = await submitPacket.invoke({ packetId: "packet-a100000000000005" }, approving);
+  assert.equal(retried.submitted, true);
+  assert.equal(balance(), 100.0);
+  assert.equal(readLedger().filter((e) => e.txnId === "packet-a100000000000005").length, 1, "no duplicate ledger entry");
+  // And a further approval is terminally refused.
+  const third = await submitPacket.invoke({ packetId: "packet-a100000000000005" }, approving);
+  assert.equal(third.submitted, false);
+  assert.equal(balance(), 100.0);
+});
+
+test("consent that does not bind to the exact packet and amount neither approves nor declines", async () => {
+  await seededDentalPacket("a100000000000006");
+  const mismatching = { interrupt: () => "consent-mismatch" } as unknown as ToolContext;
+  const r = await submitPacket.invoke({ packetId: "packet-a100000000000006" }, mismatching);
+  assert.equal(r.submitted, false);
+  assert.match(String(r.reason), /did not bind/);
+  assert.equal(loadRecord("a100000000000006")?.packet?.status, "awaiting_approval");
+  assert.equal(balance(), 280.0);
+});
+
 // ---------------- required integrity regressions ----------------
 
 test("forged amount cannot change the packet: submit takes only packetId; debit equals stored cents", async () => {
@@ -361,7 +434,7 @@ test("repeated approval debits exactly once", async () => {
 test("insufficient balance causes no partial state change", async () => {
   await seededDentalPacket("c000000000000005"); // packet for $180
   // Balance drops to $100 after the packet was built but before approval.
-  writeFileSync(ACCOUNT_PATH, JSON.stringify({ ...FRESH_ACCOUNT, remainingBalance: 100.0 }, null, 2) + "\n");
+  writeFileSync(ACCOUNT_PATH, JSON.stringify({ ...FRESH_ACCOUNT, remainingBalance: 100.0, startingBalance: 100.0 }, null, 2) + "\n");
   const r = await submitPacket.invoke({ packetId: "packet-c000000000000005" }, approving);
   assert.equal(r.submitted, false);
   assert.match(String(r.reason), /Insufficient balance/);
