@@ -63,7 +63,7 @@
   "food-grocery": {
     "ruling": "ineligible",
     "reason": "Food and groceries are not qualified medical expenses.",
-    "keywords": ["choc", "candy", "snack", "banana", "milk", "bread", "grocer", "coffee", "soda", "caramel"]
+    "keywords": ["choc", "candy", "snack", "banana", "milk", "bread", "grocer", "coffee", "soda", "caramel", "gum,", "gum ", "trident", "mints"]
   },
   "other-nonmedical": {
     "ruling": "ineligible",
