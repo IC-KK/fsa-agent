@@ -48,9 +48,16 @@ npm run process                                     # process inbox, build packe
 npm run process -- --submit                         # same, then ask the human to approve each submit
 ```
 
-Outputs land in `claims-outbox/`: one folder per claim packet (filled form, attached receipt)
-and `cards/latest-card.json`, the single decision card. Every artifact is stamped
-`DEMO / SYNTHETIC — NOT FOR SUBMISSION`. `data/audit.jsonl` is the append-only decision diary.
+Outputs land in `claims-outbox/`: one folder per claim packet — `form.json`, a printable
+`summary.html` (a claim *preparation* summary with transfer instructions, not an
+administrator form), and the attached receipt — plus `cards/latest-card.json`, the single
+decision card. Every artifact is stamped `DEMO / SYNTHETIC — NOT FOR SUBMISSION`.
+`data/audit.jsonl` is the append-only decision diary.
+
+**Privacy, stated precisely:** receipts and all state are managed as local files, and
+nothing is sent to any administrator — but reading a receipt means its content is sent to
+the configured AI model (Amazon Bedrock or the Anthropic API). "Local-first" describes the
+data's home, not a claim that document content never leaves the machine.
 
 ## The silent loop (demo mode)
 

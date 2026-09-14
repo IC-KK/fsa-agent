@@ -49,7 +49,7 @@ async function main(): Promise<void> {
     for (const interrupt of result.interrupts) {
       const reason = interrupt.reason as { packetId?: string; amount?: string } | undefined;
       const answer = await readline.question(
-        `\n>>> APPROVE SUBMIT? packet=${reason?.packetId ?? interrupt.name} amount=${reason?.amount ?? "?"} [y/N] `,
+        `\n>>> APPROVE PACKET (recorded locally, nothing sent to an administrator)? packet=${reason?.packetId ?? interrupt.name} amount=${reason?.amount ?? "?"} [y/N] `,
       );
       responses.push(
         new InterruptResponseContent({ interruptId: interrupt.id, response: answer.trim().toLowerCase() === "y" }),

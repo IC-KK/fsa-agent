@@ -24,14 +24,14 @@ async function main(): Promise<void> {
       `Packet ${packet.packetId}: ${record.extraction?.provider ?? "unknown"} · ${record.extraction?.dateOfService ?? "no date"} · ${record.file}`,
     );
     const amount = `$${(packet.amountCents / 100).toFixed(2)}`;
-    const answer = await readline.question(`Submit ${amount}? [y/N] `);
+    const answer = await readline.question(`Approve packet for ${amount}? [y/N] `);
     const approved = answer.trim().toLowerCase() === "y";
     const approvingContext = { interrupt: () => approved } as unknown as ToolContext;
     const result = await submitPacket.invoke({ packetId: packet.packetId }, approvingContext);
     console.log(
       result.submitted && "remainingBalance" in result
-        ? `✅ Submitted ${result.amount} — demo balance now $${result.remainingBalance.toFixed(2)}`
-        : `⏭  Not submitted: ${"reason" in result ? result.reason : "unknown"}`,
+        ? `✅ Approved locally — ${result.amount} recorded; demo balance now $${result.remainingBalance.toFixed(2)}.\n   The local balance tracks the demo workflow only — no administrator received anything and no reimbursement occurred. File via your administrator using the packet's summary.html.`
+        : `⏭  Not approved: ${"reason" in result ? result.reason : "unknown"}`,
     );
   }
   readline.close();

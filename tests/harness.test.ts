@@ -315,6 +315,13 @@ test("forged amount cannot change the packet: submit takes only packetId; debit 
   assert.equal(balance(), 280.0 - 180.0);
   const form = JSON.parse(readFileSync(join(ROOTS.outbox, "packets", "packet-c000000000000001", "form.json"), "utf8"));
   assert.equal(form.amountRequestedCents, 18000);
+  // Printable claim preparation summary ships alongside the JSON.
+  const html = readFileSync(join(ROOTS.outbox, "packets", "packet-c000000000000001", "summary.html"), "utf8");
+  assert.match(html, /Claim Preparation Summary/);
+  assert.match(html, /DEMO \/ SYNTHETIC/);
+  assert.match(html, /NOT an administrator-approved form/);
+  assert.match(html, /Tax treatment/);
+  assert.match(html, /administrator's own reimbursement process/);
 });
 
 test("bypassing classification cannot build a packet", async () => {

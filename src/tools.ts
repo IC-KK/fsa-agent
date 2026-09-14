@@ -72,6 +72,51 @@ export function bytesAlreadyHandled(docId: string): DocRecord | null {
 
 const PACKET_ID_RE = /^packet-[0-9a-f]{16}$/;
 
+/** Human-readable, printable claim PREPARATION summary — not an administrator form. */
+function renderClaimSummary(form: Record<string, unknown>, record: DocRecord): string {
+  const lines = record.classification?.lines ?? [];
+  const esc = (s: unknown) => String(s ?? "—").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const bucket = (ruling: string) => lines.filter((l) => (ruling === "eligible" ? l.ruling === "eligible" : ruling === "review" ? l.ruling === "needs_review" || l.ruling === "needs_lmn" : l.ruling === "ineligible"));
+  const row = (l: ClassifiedLine) => `<tr><td>${esc(l.description)}</td><td class="amt">$${(l.amountCents / 100).toFixed(2)}</td><td>${esc(l.reason)}</td></tr>`;
+  const section = (title: string, items: ClassifiedLine[]) => items.length === 0 ? "" :
+    `<h3>${title}</h3><table><tr><th>Item</th><th>Amount</th><th>Reason</th></tr>${items.map(row).join("")}</table>`;
+  const taxCents = record.extraction?.taxCents;
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Claim Preparation Summary — ${esc(form.packetId)}</title>
+<style>body{font-family:Georgia,serif;max-width:680px;margin:40px auto;padding:0 24px;color:#1c1820;line-height:1.55}
+.banner{background:#fff3cd;border:1.5px solid #d4a017;border-radius:8px;padding:12px 16px;font-family:Arial,sans-serif;font-size:13px;font-weight:bold}
+h1{font-size:26px;margin:22px 0 2px}.sub{color:#666;font-size:13px;margin-bottom:20px}
+table{width:100%;border-collapse:collapse;font-size:14px;margin:8px 0 18px}
+th{text-align:left;border-bottom:2px solid #1c1820;padding:6px 8px;font-size:12px}td{border-bottom:1px solid #e5e5e5;padding:7px 8px;vertical-align:top}
+.amt{white-space:nowrap}.facts td{border:none;padding:3px 8px}.facts td:first-child{color:#666;width:170px}
+h3{font-size:15px;margin:18px 0 4px}.note{background:#f6f6f4;border-radius:8px;padding:12px 16px;font-size:13px}
+ol{font-size:14px}@media print{.banner{-webkit-print-color-adjust:exact}}</style></head><body>
+<div class="banner">DEMO / SYNTHETIC DATA — demo account with a placeholder identity ("${esc(form.accountHolder)}"). NOT an administrator-approved form. NOT for submission to any administrator.</div>
+<h1>Claim Preparation Summary</h1>
+<div class="sub">Packet ${esc(form.packetId)} · prepared ${esc(form.preparedAt)}</div>
+<table class="facts">
+<tr><td>Provider</td><td>${esc(form.provider)}</td></tr>
+<tr><td>Date of service</td><td>${esc(form.dateOfService)}</td></tr>
+<tr><td>Source document</td><td>${esc(record.file)} (attached in this folder)</td></tr>
+<tr><td>Requested amount</td><td><strong>${esc(form.amountRequested)}</strong></td></tr>
+<tr><td>Patient</td><td>${esc(form.patient)} (placeholder identity)</td></tr>
+</table>
+${section("Included in the requested amount", bucket("eligible"))}
+${section("Excluded (not claimable)", bucket("ineligible"))}
+${section("Needs human review (not included)", bucket("review"))}
+<h3>Tax treatment</h3>
+<p class="note">${taxCents != null ? `Sales tax of $${(taxCents / 100).toFixed(2)} appears on the source document and is <strong>excluded</strong> from the requested amount.` : "No sales tax was identified on the source document."}
+This is a conservative treatment — many administrators allow tax on eligible items; confirm your administrator's policy before filing.</p>
+<h3>How to use this summary</h3>
+<ol>
+<li>Open your FSA administrator's own reimbursement process (portal, app, or paper form).</li>
+<li>Transfer the provider, date of service, and requested amount above into their required fields.</li>
+<li>Attach the source document from this packet folder as your itemized receipt.</li>
+<li>Keep this summary for your records. Items listed under review or excluded are not part of the request.</li>
+</ol>
+<p class="note">Approval in ClaimSniff records your decision <strong>locally</strong> and updates the demo balance. It does not transmit anything to an administrator, and no reimbursement occurs.</p>
+</body></html>\n`;
+}
+
 // ---------------------------------------------------------------------------
 
 export const listNewDocuments = tool({
@@ -286,6 +331,7 @@ export const buildPacket = tool({
       status: "DRAFT — awaiting human approval",
     };
     writeFileSync(join(dir, "form.json"), JSON.stringify(form, null, 2) + "\n");
+    writeFileSync(join(dir, "summary.html"), renderClaimSummary(form, record));
     record.packet = { packetId, dir: `claims-outbox/packets/${packetId}`, amountCents, status: "awaiting_approval", storedAt: new Date().toISOString() };
     saveRecord(record);
     audit("build_packet", { docId, packetId, amountCents });
