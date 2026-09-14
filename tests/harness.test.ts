@@ -374,6 +374,68 @@ test("consent that does not bind to the exact packet and amount neither approves
   assert.equal(balance(), 280.0);
 });
 
+// ---------------- bounded-reread regressions (deterministic, stubbed extractor) ----------------
+
+const goodRead = () => baseExtraction({
+  provider: "Stub Store", dateOfService: "2026-06-12",
+  lineItems: [{ description: "SUNSCREEN SPF50 6OZ", amountCents: 1000, category: "medical-equipment" }],
+  taxCents: 50, totalCents: 1050,
+});
+const badRead = () => baseExtraction({
+  provider: "Stub Store", dateOfService: "2026-06-12",
+  lineItems: [{ description: "SUNSCREEN SPF50 6OZ", amountCents: 1000, category: "medical-equipment" }],
+  taxCents: 62, totalCents: 1050, // 1062 != 1050 -> fails reconciliation precheck
+});
+
+async function withStub(reads: (() => Extraction)[], file: string) {
+  const { __setExtractionStub } = await import("../src/extractor.ts");
+  const { extractReceipt } = await import("../src/tools.ts");
+  const { resetModelBudget, modelCallsUsed } = await import("../src/lib/budget.ts");
+  let calls = 0;
+  __setExtractionStub(() => reads[Math.min(calls++, reads.length - 1)]());
+  try {
+    copyFileSync(join(ROOTS.fixtures, "01_bright_smile_dental_jun12.pdf"), join(ROOTS.inbox, file));
+    resetModelBudget();
+    const out = await extractReceipt.invoke({ file });
+    return { out, calls, budgetUsed: modelCallsUsed() };
+  } finally {
+    __setExtractionStub(null);
+    rmSync(join(ROOTS.inbox, file), { force: true });
+  }
+}
+
+test("reread: one failed read followed by a passing read produces a reconciled extraction; both attempts persist and consume budget", async () => {
+  const { checkReconciliation } = await import("../src/lib/schemas.ts");
+  const { out, calls, budgetUsed } = await withStub([badRead, goodRead], "stub-a.pdf");
+  assert.equal(calls, 2);
+  assert.equal(budgetUsed, 2, "both attempts consume the shared model budget");
+  const record = loadRecord(out.docId as string)!;
+  assert.equal(checkReconciliation(record.extraction!).ok, true, "final stored extraction reconciles");
+  assert.equal(record.extractionAttempts?.length, 1, "first failed attempt persisted");
+  assert.match(String(record.extractionAttempts![0].discrepancy), /printed total/);
+  assert.equal(record.extractionAttempts![0].taxCents, 62);
+  assert.equal(record.extraction!.taxCents, 50);
+});
+
+test("reread: two failed reads remain needs_review; never more than two extraction attempts", async () => {
+  const { out, calls, budgetUsed } = await withStub([badRead, badRead, badRead], "stub-b.pdf");
+  assert.equal(calls, 2, "never more than two extraction attempts");
+  assert.equal(budgetUsed, 2);
+  const record = loadRecord(out.docId as string)!;
+  assert.equal(record.extractionAttempts?.length, 1);
+  const r = await classifyEligibility.invoke({ docId: out.docId as string });
+  assert.equal(r.status, "needs_review");
+  assert.equal(r.claimableCents, 0);
+});
+
+test("reread: a clean first read makes exactly one attempt and stores no prior attempts", async () => {
+  const { out, calls, budgetUsed } = await withStub([goodRead], "stub-c.pdf");
+  assert.equal(calls, 1);
+  assert.equal(budgetUsed, 1);
+  const record = loadRecord(out.docId as string)!;
+  assert.equal(record.extractionAttempts, undefined);
+});
+
 // ---------------- ledger-derived authorization + recovery regressions ----------------
 
 /** Second fileable packet with a distinct fingerprint (different provider). */

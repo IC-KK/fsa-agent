@@ -54,6 +54,13 @@ function blockForFile(path: string): ImageBlock | DocumentBlock {
 
 const MAX_BYTES = 8 * 1024 * 1024;
 
+// Test-only seam: lets deterministic tests drive the reread flow with zero
+// model calls. Never set outside tests; behavior is unchanged when null.
+let extractionStub: ((path: string, rereadNote?: string) => Extraction) | null = null;
+export function __setExtractionStub(fn: typeof extractionStub): void {
+  extractionStub = fn;
+}
+
 /** One-shot vision call: document in, validated structured fields out.
  *  An optional rereadNote flags a reconciliation discrepancy from a prior
  *  attempt and instructs a recheck of the printed fields. */
@@ -69,6 +76,7 @@ export async function extractDocument(path: string, rereadNote?: string): Promis
     };
   }
   consumeModelCall(`extract:${basename(path)}`);
+  if (extractionStub) return extractionStub(path, rereadNote);
   const reader = new Agent({
     model: createModel(1500),
     systemPrompt: EXTRACTOR_PROMPT,
