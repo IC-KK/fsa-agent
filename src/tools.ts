@@ -9,6 +9,7 @@ import { readAccount, debitAccount, readClaimsIndex, recordClaim, claimFingerpri
 import { canonicalParty } from "./lib/store.ts";
 import { docIdForBytes, loadRecord, saveRecord, listRecords, withApprovalLock, type DocRecord, type ClassifiedLine } from "./lib/records.ts";
 import { extractDocument } from "./extractor.ts";
+import { checkReconciliation } from "./lib/schemas.ts";
 
 interface Rule { ruling: "eligible" | "ineligible" | "needs_lmn"; reason: string; keywords: string[] }
 const RULES: Record<string, Rule> = Object.fromEntries(
@@ -148,9 +149,17 @@ export const extractReceipt = tool({
       audit("extract_receipt", { docId, file: basename(path), skipped: "identical_bytes", priorFile: prior.file });
       return { role: "UNTRUSTED_DOCUMENT", docId, file: basename(path), alreadyProcessed: true, duplicateOf: prior.file, note: "Identical file bytes were already handled — skip this document." };
     }
-    const extraction = await extractDocument(path);
+    let extraction = await extractDocument(path);
     const record: DocRecord = loadRecord(docId) ?? { docId, file: basename(path) };
     record.file = basename(path);
+    // One bounded reread when the first read fails deterministic reconciliation.
+    // Both attempts are persisted; the reread counts against the shared budget.
+    const firstCheck = checkReconciliation(extraction);
+    if (!firstCheck.ok) {
+      record.extractionAttempts = [{ ...extraction, storedAt: new Date().toISOString(), discrepancy: firstCheck.note ?? "unknown" }];
+      audit("extract_reread", { docId, discrepancy: firstCheck.note });
+      extraction = await extractDocument(path, firstCheck.note ?? undefined);
+    }
     record.extraction = { ...extraction, storedAt: new Date().toISOString() };
     saveRecord(record);
     audit("extract_receipt", {

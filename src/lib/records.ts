@@ -24,6 +24,8 @@ export interface DocRecord {
   docId: string; // sha256 of file bytes (first 16 hex), computed in code
   file: string;
   extraction?: Extraction & { storedAt: string };
+  /** Prior extraction attempts that failed the reconciliation precheck. */
+  extractionAttempts?: (Extraction & { storedAt: string; discrepancy: string })[];
   classification?: {
     status: "eligible" | "mixed" | "needs_lmn" | "ineligible" | "needs_review";
     claimableCents: number;

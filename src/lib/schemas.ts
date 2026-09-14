@@ -43,3 +43,20 @@ export const ExtractionSchema = z.object({
 });
 
 export type Extraction = z.infer<typeof ExtractionSchema>;
+
+/**
+ * Deterministic reconciliation check shared by classification and the
+ * extraction reread gate: net lines + tax + shipping must equal the printed
+ * total. Returns a human-readable discrepancy note when it fails.
+ */
+export function checkReconciliation(e: Extraction): { ok: boolean; note: string | null } {
+  if (e.docType === "eob" || e.lineItems.length === 0) return { ok: true, note: null };
+  const lineSum = e.lineItems.reduce((s, l) => s + l.amountCents, 0);
+  if (e.totalCents == null) return { ok: false, note: "No printed total was captured — look again for a TOTAL line." };
+  const adj = (e.taxCents ?? 0) + (e.shippingCents ?? 0);
+  if (lineSum + adj === e.totalCents) return { ok: true, note: null };
+  return {
+    ok: false,
+    note: `Captured line amounts (${(lineSum / 100).toFixed(2)}) + tax/shipping (${(adj / 100).toFixed(2)}) = ${((lineSum + adj) / 100).toFixed(2)}, but the printed total is ${(e.totalCents / 100).toFixed(2)}.`,
+  };
+}
