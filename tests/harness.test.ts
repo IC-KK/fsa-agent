@@ -31,6 +31,8 @@ function resetState(): void {
   }
   rmSync(join(ROOTS.data, "records"), { recursive: true, force: true });
   rmSync(join(ROOTS.data, ".approval-lock"), { recursive: true, force: true });
+  rmSync(join(ROOTS.outbox, "packets"), { recursive: true, force: true });
+  rmSync(join(ROOTS.outbox, "cards"), { recursive: true, force: true });
 }
 before(resetState);
 beforeEach(resetState);
