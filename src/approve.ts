@@ -11,20 +11,28 @@ import { listRecords } from "./lib/records.ts";
  * by construction; amounts come from the stored packet, never from input.
  */
 async function main(): Promise<void> {
-  const awaiting = listRecords().filter((r) => r.packet?.status === "awaiting_approval");
-  if (awaiting.length === 0) {
+  const actionable = listRecords().filter(
+    (r) => r.packet?.status === "awaiting_approval" || r.packet?.status === "approving",
+  );
+  if (actionable.length === 0) {
     console.log("No draft packets awaiting approval.");
     return;
   }
   const readline = createInterface({ input: process.stdin, output: process.stdout });
-  for (const record of awaiting) {
+  for (const record of actionable) {
     const packet = record.packet!;
+    const isRecovery = packet.status === "approving";
     console.log(`\nDEMO / SYNTHETIC DATA — demo account, not a real FSA`);
     console.log(
       `Packet ${packet.packetId}: ${record.extraction?.provider ?? "unknown"} · ${record.extraction?.dateOfService ?? "no date"} · ${record.file}`,
     );
     const amount = `$${(packet.amountCents / 100).toFixed(2)}`;
-    const answer = await readline.question(`Approve packet for ${amount}? [y/N] `);
+    if (isRecovery) {
+      console.log("⚠ RECOVERY: a previous approval of this packet was interrupted mid-write. Confirming completes that transaction — it is not a new approval and can never debit twice.");
+    }
+    const answer = await readline.question(
+      isRecovery ? `Complete interrupted approval of ${amount}? [y/N] ` : `Approve packet for ${amount}? [y/N] `,
+    );
     const approved = answer.trim().toLowerCase() === "y";
     // Consent is bound to the exact packet id and amount that were displayed.
     // If the tool's freshly loaded packet differs, this returns a mismatch

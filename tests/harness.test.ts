@@ -374,6 +374,77 @@ test("consent that does not bind to the exact packet and amount neither approves
   assert.equal(balance(), 280.0);
 });
 
+// ---------------- ledger-derived authorization + recovery regressions ----------------
+
+/** Second fileable packet with a distinct fingerprint (different provider). */
+async function seededSecondPacket(docId: string, amountCents: number) {
+  seed(docId, "01_bright_smile_dental_jun12.pdf", {
+    docType: "invoice", provider: `Other Provider ${docId.slice(-2)}`, dateOfService: "2026-07-01",
+    lineItems: [{ description: "Composite filling, one surface", amountCents, category: "dental" }],
+  });
+  copyFileSync(join(ROOTS.fixtures, "01_bright_smile_dental_jun12.pdf"), join(ROOTS.inbox, "01_bright_smile_dental_jun12.pdf"));
+  await classifyEligibility.invoke({ docId });
+  const m = await matchAccount.invoke({ docId });
+  assert.equal(m.fileable, true);
+  return buildPacket.invoke({ docId });
+}
+
+test("A's balance-write failure, then B's approval: B authorizes against the ledger, never the stale cache", async () => {
+  const { __injectWriteFailure, readLedger } = await import("../src/lib/store.ts");
+  await seededDentalPacket("b200000000000001"); // A: $180
+  await seededSecondPacket("b200000000000002", 20000); // B: $200
+  __injectWriteFailure("balance");
+  const a = await submitPacket.invoke({ packetId: "packet-b200000000000001" }, approving);
+  assert.equal(a.submitted, false); // ledger has A's 18000; cached balance still says 280
+  // B must be authorized from starting - ledger = $100, so $200 is refused.
+  const b = await submitPacket.invoke({ packetId: "packet-b200000000000002" }, approving);
+  assert.equal(b.submitted, false);
+  assert.match(String(b.reason), /Insufficient balance/);
+  const total = readLedger().reduce((s, e) => s + e.cents, 0);
+  assert.ok(total <= 28000, "ledger never exceeds starting balance");
+  // A's retry recovers WITHOUT another debit.
+  const aRetry = await submitPacket.invoke({ packetId: "packet-b200000000000001" }, approving);
+  assert.equal(aRetry.submitted, true);
+  assert.equal(readLedger().filter((e) => e.txnId === "packet-b200000000000001").length, 1);
+  assert.equal(balance(), 100.0);
+});
+
+test("A's pre-append failure, then B's success, then A's retry: funds re-checked, ledger never exceeds starting balance", async () => {
+  const { __injectWriteFailure, readLedger } = await import("../src/lib/store.ts");
+  await seededDentalPacket("b200000000000003"); // A: $180
+  await seededSecondPacket("b200000000000004", 20000); // B: $200
+  __injectWriteFailure("ledger"); // A fails BEFORE any ledger entry
+  const a = await submitPacket.invoke({ packetId: "packet-b200000000000003" }, approving);
+  assert.equal(a.submitted, false);
+  assert.equal(readLedger().length, 0, "no ledger entry for A");
+  const b = await submitPacket.invoke({ packetId: "packet-b200000000000004" }, approving); // B: $200 fits in $280
+  assert.equal(b.submitted, true);
+  // A retries in 'approving' state with no ledger entry: funds must be
+  // re-checked against the ledger ($80 left) and refused — no blind append.
+  const aRetry = await submitPacket.invoke({ packetId: "packet-b200000000000003" }, approving);
+  assert.equal(aRetry.submitted, false);
+  assert.match(String(aRetry.reason), /Insufficient balance/);
+  const total = readLedger().reduce((s, e) => s + e.cents, 0);
+  assert.ok(total <= 28000, "ledger never exceeds starting balance");
+  assert.equal(total, 20000);
+});
+
+test("recovery through the actual approve CLI completes the interrupted transaction exactly once", async () => {
+  const { __injectWriteFailure, readLedger } = await import("../src/lib/store.ts");
+  await seededDentalPacket("b200000000000005");
+  __injectWriteFailure("balance");
+  const failed = await submitPacket.invoke({ packetId: "packet-b200000000000005" }, approving);
+  assert.equal(failed.submitted, false);
+  assert.equal(loadRecord("b200000000000005")?.packet?.status, "approving");
+  const { execSync } = await import("node:child_process");
+  const out = execSync('printf "y\\n" | node src/approve.ts', { cwd: join(ROOTS.data, ".."), encoding: "utf8" });
+  assert.match(out, /RECOVERY: a previous approval of this packet was interrupted/);
+  assert.match(out, /Complete interrupted approval of \$180\.00/);
+  assert.equal(loadRecord("b200000000000005")?.packet?.status, "approved");
+  assert.equal(readLedger().filter((e) => e.txnId === "packet-b200000000000005").length, 1);
+  assert.equal(balance(), 100.0);
+});
+
 // ---------------- required integrity regressions ----------------
 
 test("forged amount cannot change the packet: submit takes only packetId; debit equals stored cents", async () => {

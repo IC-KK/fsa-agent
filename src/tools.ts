@@ -5,7 +5,7 @@ import { tool } from "@strands-agents/sdk";
 import { ROOTS, safeResolve } from "./lib/paths.ts";
 import { audit } from "./lib/audit.ts";
 import { fromCents, assertCents } from "./lib/money.ts";
-import { readAccount, debitAccount, readClaimsIndex, recordClaim, claimFingerprint, ledgerHas } from "./lib/store.ts";
+import { readAccount, debitAccount, readClaimsIndex, recordClaim, claimFingerprint, ledgerHas, availableCents } from "./lib/store.ts";
 import { canonicalParty } from "./lib/store.ts";
 import { docIdForBytes, loadRecord, saveRecord, listRecords, withApprovalLock, type DocRecord, type ClassifiedLine } from "./lib/records.ts";
 import { extractDocument } from "./extractor.ts";
@@ -285,7 +285,7 @@ export const matchAccount = tool({
       // metadata fingerprint match does not prove two receipts are identical.
       return finish({ fileable: false, status: "possible_duplicate", fingerprint, fileCents: 0, reason: `Possible duplicate: matches the patient/provider/date/amount of '${hit.file}' (${hit.status}). Flagged for human review — a metadata match does not prove the receipts are identical.`, storedAt: stamp() });
     }
-    const remainingCents = Math.round(account.remainingBalance * 100);
+    const remainingCents = availableCents(); // ledger-derived, never the cached field
     const fileCents = Math.min(claimableCents, remainingCents);
     if (fileCents <= 0) {
       return finish({ fileable: false, status: "no_balance", fingerprint, fileCents: 0, reason: "No remaining FSA balance.", storedAt: stamp() });
@@ -447,11 +447,15 @@ export const submitPacket = tool({
           return { submitted: false, reason: "Human declined." };
         }
       }
-      if (status === "awaiting_approval" && !debitLanded) {
-        const remainingCents = Math.round(readAccount().remainingBalance * 100);
+      // Funds check for ANY new debit — including a retry in 'approving' state
+      // whose ledger entry never landed. Authorized against the ledger-derived
+      // balance, never the cached field. An already-committed transaction
+      // recovers without another debit and needs no funds check.
+      if (!debitLanded) {
+        const remainingCents = availableCents();
         if (remainingCents < amountCents) {
-          audit("submit_packet", { packetId, refused: "insufficient_balance" });
-          return { submitted: false, reason: `Insufficient balance: ${fromCents(remainingCents)} available, ${fromCents(amountCents)} requested. No state changed.` };
+          audit("submit_packet", { packetId, refused: "insufficient_balance", availableCents: remainingCents });
+          return { submitted: false, reason: `Insufficient balance: ${fromCents(remainingCents)} available (ledger-derived), ${fromCents(amountCents)} requested. No state changed.` };
         }
       }
       // Two-phase with recovery: mark intent, commit to the ledger, finalize.

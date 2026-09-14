@@ -34,6 +34,18 @@ export function ledgerHas(txnId: string): boolean {
   return readLedger().some((e) => e.txnId === txnId);
 }
 
+/**
+ * Authoritative available funds: starting balance minus COMMITTED ledger
+ * entries. Every spending decision authorizes against this — never against
+ * the cached remainingBalance field.
+ */
+export function availableCents(): number {
+  const account = readAccount();
+  const startingCents = Math.round((account.startingBalance ?? account.remainingBalance) * 100);
+  const spentCents = readLedger().reduce((s, e) => s + e.cents, 0);
+  return startingCents - spentCents;
+}
+
 // Test-only injection point for write-failure recovery tests.
 let injectedFailure: "ledger" | "balance" | null = null;
 export function __injectWriteFailure(kind: "ledger" | "balance" | null): void {
